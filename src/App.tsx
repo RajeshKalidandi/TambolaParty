@@ -1,4 +1,6 @@
 import { createBrowserRouter, RouterProvider, Navigate } from 'react-router-dom';
+import { AuthProvider } from './lib/auth/AuthContext';
+import { ProtectedRoute } from './lib/auth/ProtectedRoute';
 import LandingPage from './pages/LandingPage';
 import GameLobby from './pages/GameLobby';
 import CreateRoom from './pages/CreateRoom';
@@ -8,8 +10,10 @@ import PlayerProfile from './pages/PlayerProfile';
 import BuyTickets from './pages/payments/BuyTickets';
 import Withdrawal from './pages/payments/Withdrawal';
 import GameResults from './pages/GameResults';
-import QuickJoin from './pages/QuickJoin'; // Assuming QuickJoin is in the same directory as other pages
-
+import QuickJoin from './pages/QuickJoin';
+import Login from './pages/Login';
+import Register from './pages/Register';
+import ForgotPassword from './pages/ForgotPassword';
 
 const router = createBrowserRouter([
   {
@@ -17,50 +21,101 @@ const router = createBrowserRouter([
     element: <LandingPage />,
   },
   {
+    path: '/login',
+    element: <Login />,
+  },
+  {
+    path: '/register',
+    element: <Register />,
+  },
+  {
+    path: '/forgot-password',
+    element: <ForgotPassword />,
+  },
+  {
     path: '/lobby',
-    element: <GameLobby />,
+    element: (
+      <ProtectedRoute>
+        <GameLobby />
+      </ProtectedRoute>
+    ),
   },
   {
     path: '/create',
-    element: <CreateRoom />,
+    element: (
+      <ProtectedRoute>
+        <CreateRoom />
+      </ProtectedRoute>
+    ),
   },
   {
-    path: '/game/:id',
-    element: <GameScreen />,
+    path: '/game/:gameId',
+    element: (
+      <ProtectedRoute>
+        <GameScreen />
+      </ProtectedRoute>
+    ),
   },
   {
     path: '/game/:gameId/results',
-    element: <GameResults gameId={":gameId"} />,
+    element: (
+      <ProtectedRoute>
+        <GameResults />
+      </ProtectedRoute>
+    ),
   },
   {
     path: '/dashboard',
-    element: <HostDashboard />,
+    element: (
+      <ProtectedRoute>
+        <HostDashboard />
+      </ProtectedRoute>
+    ),
+  },
+  {
+    path: '/profile',
+    element: (
+      <ProtectedRoute>
+        <PlayerProfile />
+      </ProtectedRoute>
+    ),
+  },
+  {
+    path: '/buy-tickets',
+    element: (
+      <ProtectedRoute>
+        <BuyTickets />
+      </ProtectedRoute>
+    ),
+  },
+  {
+    path: '/withdraw',
+    element: (
+      <ProtectedRoute>
+        <Withdrawal />
+      </ProtectedRoute>
+    ),
+  },
+  {
+    path: '/quick-join',
+    element: (
+      <ProtectedRoute>
+        <QuickJoin />
+      </ProtectedRoute>
+    ),
   },
   {
     path: '*',
     element: <Navigate to="/" replace />,
   },
-  {
-    path: '/profile',
-    element: <PlayerProfile />,
-  },
-
-  {
-    path: '/buy-tickets',
-    element: <BuyTickets />,
-  },
-  {
-    path: '/withdraw',
-    element: <Withdrawal />,
-  },
-  {
-    path: '/quick-join',
-    element: <QuickJoin />,
-  },
 ]);
 
-function App() {
-  return <RouterProvider router={router} />;
-}
+const App = () => {
+  return (
+    <AuthProvider>
+      <RouterProvider router={router} />
+    </AuthProvider>
+  );
+};
 
 export default App;
