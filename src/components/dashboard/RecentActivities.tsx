@@ -1,5 +1,4 @@
-import React from 'react';
-import { GameController, Wallet, MessageSquare } from 'lucide-react';
+import { Gamepad, Wallet, MessageSquare } from 'lucide-react';
 import type { RecentActivity } from '../../types/dashboard';
 
 interface RecentActivitiesProps {
@@ -10,15 +9,17 @@ export default function RecentActivities({ activities }: RecentActivitiesProps) 
   const getIcon = (type: RecentActivity['type']) => {
     switch (type) {
       case 'game':
-        return GameController;
+        return Gamepad;
       case 'withdrawal':
         return Wallet;
       case 'feedback':
         return MessageSquare;
+      default:
+        return Gamepad;
     }
   };
 
-  const getStatusColor = (status?: string) => {
+  const getStatusColor = (status: string | undefined) => {
     switch (status) {
       case 'completed':
         return 'bg-green-100 text-green-700';

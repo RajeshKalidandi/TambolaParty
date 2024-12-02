@@ -46,13 +46,3 @@ Please make sure to update tests as appropriate.
 
 ## License
 MIT
-
-
-3. Initialize Git and push to GitHub:
-```bash
-git init
-git add .
-git commit -m "Initial commit: Frontend structure with React + Vite"
-git branch -M main
-git remote add origin https://github.com/yourusername/TambolaParty.git
-git push -u origin main

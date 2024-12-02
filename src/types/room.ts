@@ -16,3 +16,22 @@ export interface Room {
   maxPlayers: number;
   startTime: string;
 }
+
+export interface RecentRoom {
+  id: string;
+  code: string;
+  name: string;
+  hostName: string;
+  ticketPrice: number;
+  startTime: Date;
+  playerCount: number;
+}
+
+export interface PopularHost {
+  id: string;
+  name: string;
+  avatar: string;
+  rating: number;
+  activeRooms: number;
+  totalGamesHosted: number;
+}
