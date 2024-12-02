@@ -45,4 +45,8 @@ Pull requests are welcome. For major changes, please open an issue first to disc
 Please make sure to update tests as appropriate.
 
 ## License
+<<<<<<< HEAD
 MIT
+=======
+MIT
+>>>>>>> 05f3659c50ce006139179ed56856b9aab23c2e9c
