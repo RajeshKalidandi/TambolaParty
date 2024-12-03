@@ -44,32 +44,42 @@ export default function GameLobby() {
 
   const loadStats = async () => {
     try {
-      const [roomsData, playersData] = await Promise.all([
-        supabase
-          .from('rooms')
-          .select('ticket_price, max_players, prizes')
-          .eq('status', 'waiting'),
-        supabase
-          .from('room_players')
-          .select('player_id', { count: 'exact' })
-          .eq('payment_status', 'PAID'),
-      ]);
+      // Get active rooms with their prizes
+      const { data: roomsData, error: roomsError } = await supabase
+        .from('rooms')
+        .select(`
+          ticket_price,
+          max_players,
+          prizes
+        `)
+        .eq('status', 'waiting');
 
-      if (roomsData.error) throw roomsData.error;
-      if (playersData.error) throw playersData.error;
+      if (roomsError) throw roomsError;
 
-      const prizePool = roomsData.data.reduce((total, room) => {
+      // Get count of paid players
+      const { count: paidPlayersCount, error: playersError } = await supabase
+        .from('room_players')
+        .select('*', { count: 'exact', head: true })
+        .eq('payment_status', 'PAID');
+
+      if (playersError) throw playersError;
+
+      // Calculate total prize pool
+      const prizePool = (roomsData || []).reduce((total, room) => {
+        if (!room.prizes) return total;
         const prizes = room.prizes as Room['prizes'];
         return total + Object.values(prizes).reduce((a, b) => a + b, 0);
       }, 0);
 
       setStats({
         prizePool,
-        activeGames: roomsData.data.length,
-        players: playersData.count || 0,
+        activeGames: roomsData?.length || 0,
+        players: paidPlayersCount || 0,
       });
     } catch (error) {
       console.error('Error loading stats:', error);
+      // Optionally show error toast
+      // toast.error('Failed to load lobby stats');
     }
   };
 

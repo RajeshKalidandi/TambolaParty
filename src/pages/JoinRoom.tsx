@@ -123,7 +123,7 @@ export default function JoinRoom() {
         .from('room_players')
         .select('id')
         .eq('room_id', roomDetails.id)
-        .eq('player_id', user.id)
+        .eq('user_id', user.id)
         .single();
 
       if (checkError && checkError.code !== 'PGRST116') { // PGRST116 is "no rows returned"
@@ -150,7 +150,9 @@ export default function JoinRoom() {
         .from('room_players')
         .insert({
           room_id: roomDetails.id,
-          player_id: user.id,
+          user_id: user.id,
+          nickname: user.user_metadata?.name || user.email?.split('@')[0] || 'Player',
+          payment_status: 'pending',
           joined_at: new Date().toISOString()
         });
 
