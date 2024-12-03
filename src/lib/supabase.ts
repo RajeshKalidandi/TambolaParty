@@ -18,6 +18,7 @@ export interface Database {
             topLine: number;
             middleLine: number;
             bottomLine: number;
+            earlyFive: number;
           };
           payment_details: {
             upiId: string;
@@ -58,6 +59,38 @@ export interface Database {
         };
         Insert: Omit<Database['public']['Tables']['payment_verifications']['Row'], 'id' | 'timestamp'>;
         Update: Partial<Database['public']['Tables']['payment_verifications']['Row']>;
+      };
+      host_activities: {
+        Row: {
+          id: string;
+          host_id: string;
+          type: 'game' | 'withdrawal' | 'feedback';
+          title: string;
+          description: string;
+          amount: number;
+          status: 'completed' | 'pending' | 'cancelled';
+          created_at: string;
+        };
+        Insert: Omit<Database['public']['Tables']['host_activities']['Row'], 'id' | 'created_at'>;
+        Update: Partial<Database['public']['Tables']['host_activities']['Row']>;
+      };
+      tickets: {
+        Row: {
+          id: string;
+          room_id: string;
+          player_id: string;
+          numbers: number[][];
+          claims: {
+            full_house: boolean;
+            top_line: boolean;
+            middle_line: boolean;
+            bottom_line: boolean;
+            early_five: boolean;
+          };
+          created_at: string;
+        };
+        Insert: Omit<Database['public']['Tables']['tickets']['Row'], 'id' | 'created_at'>;
+        Update: Partial<Database['public']['Tables']['tickets']['Row']>;
       };
     };
   };

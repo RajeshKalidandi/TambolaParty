@@ -1,20 +1,22 @@
 export interface Room {
   id: string;
   name: string;
-  hostRating: number;
-  ticketPrice: number;
+  host_id: string;
+  ticket_price: number;
+  max_players: number;
+  start_time: string;
+  status: 'waiting' | 'in_progress' | 'completed';
   prizes: {
     fullHouse: number;
     topLine: number;
     middleLine: number;
     bottomLine: number;
   };
-  players: {
-    id: string;
-    avatar: string;
-  }[];
-  maxPlayers: number;
-  startTime: string;
+  payment_details: {
+    upiId: string;
+    qrImage: string;
+  };
+  created_at: string;
 }
 
 export interface RecentRoom {

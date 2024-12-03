@@ -59,8 +59,8 @@ export default function GameLobby() {
       if (playersData.error) throw playersData.error;
 
       const prizePool = roomsData.data.reduce((total, room) => {
-        if (!room.prizes) return total;
-        return total + Object.values(room.prizes).reduce((a: number, b: number) => a + b, 0);
+        const prizes = room.prizes as Room['prizes'];
+        return total + Object.values(prizes).reduce((a, b) => a + b, 0);
       }, 0);
 
       setStats({
