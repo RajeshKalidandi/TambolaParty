@@ -1,19 +1,11 @@
 import { useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
-import { Coins, ArrowLeft, CreditCard, Building2, ChevronRight, ArrowDownCircle, ArrowUpCircle } from 'lucide-react';
+import { ArrowLeft, CreditCard, Building2, ArrowDownCircle, ArrowUpCircle } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { toast } from 'react-hot-toast';
 import { useAuth } from '../../lib/auth/AuthContext';
 import { supabase } from '../../lib/supabase';
-
-interface Transaction {
-  id: string;
-  amount: number;
-  type: 'credit' | 'debit';
-  description: string;
-  created_at: string;
-  status: 'pending' | 'completed' | 'failed';
-}
+import type { Transaction } from '../../types/wallet';
 
 interface BankAccount {
   id: string;

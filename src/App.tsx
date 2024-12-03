@@ -9,11 +9,14 @@ import HostDashboard from './pages/HostDashboard';
 import PlayerProfile from './pages/PlayerProfile';
 import BuyTickets from './pages/payments/BuyTickets';
 import Withdrawal from './pages/payments/Withdrawal';
+import Wallet from './pages/payments/Wallet';
 import GameResults from './pages/GameResults';
 import QuickJoin from './pages/QuickJoin';
 import Login from './pages/Login';
 import Register from './pages/Register';
 import ForgotPassword from './pages/ForgotPassword';
+import Tickets from './pages/Tickets';
+import Notifications from './pages/Notifications';
 
 const router = createBrowserRouter([
   {
@@ -49,7 +52,7 @@ const router = createBrowserRouter([
     ),
   },
   {
-    path: '/game/:gameId',
+    path: '/game/:id',
     element: (
       <ProtectedRoute>
         <GameScreen />
@@ -57,15 +60,7 @@ const router = createBrowserRouter([
     ),
   },
   {
-    path: '/game/:gameId/results',
-    element: (
-      <ProtectedRoute>
-        <GameResults />
-      </ProtectedRoute>
-    ),
-  },
-  {
-    path: '/dashboard',
+    path: '/host',
     element: (
       <ProtectedRoute>
         <HostDashboard />
@@ -81,7 +76,7 @@ const router = createBrowserRouter([
     ),
   },
   {
-    path: '/buy-tickets',
+    path: '/buy-tickets/:gameId',
     element: (
       <ProtectedRoute>
         <BuyTickets />
@@ -89,10 +84,42 @@ const router = createBrowserRouter([
     ),
   },
   {
-    path: '/withdraw',
+    path: '/withdrawal',
     element: (
       <ProtectedRoute>
         <Withdrawal />
+      </ProtectedRoute>
+    ),
+  },
+  {
+    path: '/wallet',
+    element: (
+      <ProtectedRoute>
+        <Wallet />
+      </ProtectedRoute>
+    ),
+  },
+  {
+    path: '/tickets',
+    element: (
+      <ProtectedRoute>
+        <Tickets />
+      </ProtectedRoute>
+    ),
+  },
+  {
+    path: '/notifications',
+    element: (
+      <ProtectedRoute>
+        <Notifications />
+      </ProtectedRoute>
+    ),
+  },
+  {
+    path: '/game/:id/results',
+    element: (
+      <ProtectedRoute>
+        <GameResults />
       </ProtectedRoute>
     ),
   },
@@ -110,12 +137,12 @@ const router = createBrowserRouter([
   },
 ]);
 
-const App = () => {
+function App() {
   return (
     <AuthProvider>
       <RouterProvider router={router} />
     </AuthProvider>
   );
-};
+}
 
 export default App;
