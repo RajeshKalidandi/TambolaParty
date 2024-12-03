@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import toast from 'react-hot-toast';
@@ -14,6 +14,7 @@ interface RoomDetails {
     qrImage: string;
   };
   current_players: number;
+  expires_at: string;
 }
 
 export default function JoinRoom() {
@@ -28,9 +29,15 @@ export default function JoinRoom() {
     }
   }, [code]);
 
-  const findRoomByCode = async (roomCode: string) => {
-    try {
-      setIsLoading(true);
+      const findRoomByCode = async (roomCode: string) => {
+        try {
+          setIsLoading(true);
+
+      // Validate room code format
+      if (!roomCode.match(/^[A-Z0-9]{6}$/)) {
+        throw new Error('Invalid room code format');
+      }
+
       const { data, error } = await supabase
         .from('rooms')
         .select(`
@@ -40,12 +47,23 @@ export default function JoinRoom() {
           max_players,
           start_time,
           payment_details,
-          room_players(count)
+          room_players(count),
+          expires_at
         `)
         .eq('room_code', roomCode.toUpperCase())
         .single();
 
       if (error) throw error;
+
+      // Check if room has expired
+      if (data.expires_at && new Date(data.expires_at) < new Date()) {
+        throw new Error('This room has expired');
+      }
+
+      // Check if game has already started
+      if (new Date(data.start_time) < new Date()) {
+        throw new Error('This game has already started');
+      }
 
       // Transform the data to match our interface
       const roomData: RoomDetails = {
@@ -56,7 +74,11 @@ export default function JoinRoom() {
       setRoomDetails(roomData);
     } catch (error) {
       console.error('Error finding room:', error);
-      toast.error('Room not found');
+      if (error instanceof Error) {
+        toast.error(error.message);
+      } else {
+        toast.error('Room not found');
+      }
       navigate('/');
     } finally {
       setIsLoading(false);

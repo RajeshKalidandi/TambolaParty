@@ -16,6 +16,7 @@ interface RoomDetails {
     upiId: string;
     qrImage: string;
   };
+  expires_at: string;
 }
 
 export default function ShareRoom({ roomId }: ShareRoomProps) {
@@ -32,7 +33,7 @@ export default function ShareRoom({ roomId }: ShareRoomProps) {
       setIsLoading(true);
       const { data, error } = await supabase
         .from('rooms')
-        .select('room_code, name, ticket_price, payment_details')
+        .select('room_code, name, ticket_price, payment_details, expires_at')
         .eq('id', roomId)
         .single();
 
@@ -133,6 +134,14 @@ export default function ShareRoom({ roomId }: ShareRoomProps) {
       </div>
 
       <div className="mt-6 border-t border-gray-200 pt-6">
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <p className="text-sm font-medium text-gray-700">Room Expires</p>
+            <p className="text-sm text-gray-500">
+              {new Date(roomDetails.expires_at).toLocaleString()}
+            </p>
+          </div>
+        </div>
         <div className="flex items-center justify-between">
           <div>
             <p className="text-sm font-medium text-gray-700">Ticket Price</p>
