@@ -1,5 +1,7 @@
-import { useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { Volume2, VolumeX, History } from 'lucide-react';
+import { RealtimePostgresChangesPayload, PostgrestError } from '@supabase/supabase-js';
 import { supabase } from '../../lib/supabase';
 import toast from 'react-hot-toast';
 
@@ -8,13 +10,25 @@ interface NumberDisplayProps {
   isHost?: boolean;
 }
 
-export default function NumberDisplay({ gameId, isHost }: NumberDisplayProps) {
+interface GameState {
+  id: string;
+  current_number: number | null;
+  called_numbers: number[];
+  created_at?: string;
+  updated_at?: string;
+}
+
+const numberSound = new Audio('/sounds/number.mp3');
+numberSound.volume = 0.5;
+
+const NumberDisplay: React.FC<NumberDisplayProps> = ({ gameId, isHost }) => {
   const [currentNumber, setCurrentNumber] = useState<number | null>(null);
   const [lastNumbers, setLastNumbers] = useState<number[]>([]);
+  const [soundEnabled, setSoundEnabled] = useState(true);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    loadGameState();
+    void loadGameState();
     
     // Subscribe to game updates
     const channel = supabase
@@ -27,20 +41,22 @@ export default function NumberDisplay({ gameId, isHost }: NumberDisplayProps) {
           table: 'games',
           filter: `id=eq.${gameId}`,
         },
-        (payload) => {
-          const { current_number, called_numbers } = payload.new;
-          setCurrentNumber(current_number);
-          setLastNumbers(called_numbers || []);
+        (payload: RealtimePostgresChangesPayload<GameState>) => {
+          if (payload.new && 'current_number' in payload.new) {
+            const newState = payload.new as GameState;
+            setCurrentNumber(newState.current_number);
+            setLastNumbers(newState.called_numbers || []);
+          }
         }
       )
       .subscribe();
 
     return () => {
-      supabase.removeChannel(channel);
+      void supabase.removeChannel(channel);
     };
   }, [gameId]);
 
-  const loadGameState = async () => {
+  const loadGameState = async (): Promise<void> => {
     try {
       const { data, error } = await supabase
         .from('games')
@@ -48,25 +64,25 @@ export default function NumberDisplay({ gameId, isHost }: NumberDisplayProps) {
         .eq('id', gameId)
         .single();
 
-      if (error) throw error;
+      if (error) {
+        throw new Error(error.message);
+      }
       
-      setCurrentNumber(data.current_number);
-      setLastNumbers(data.called_numbers || []);
+      setCurrentNumber(data?.current_number ?? null);
+      setLastNumbers(data?.called_numbers || []);
       setLoading(false);
     } catch (error) {
       console.error('Error loading game state:', error);
-      toast.error('Failed to load game state');
+      toast.error(error instanceof Error ? error.message : 'Failed to load game state');
       setLoading(false);
     }
   };
 
-  const callNumber = async () => {
+  const callNumber = async (): Promise<void> => {
     if (!isHost) return;
 
     try {
-      // Get all numbers from 1 to 90
       const allNumbers = Array.from({ length: 90 }, (_, i) => i + 1);
-      // Filter out already called numbers
       const availableNumbers = allNumbers.filter(n => !lastNumbers.includes(n));
       
       if (availableNumbers.length === 0) {
@@ -74,7 +90,6 @@ export default function NumberDisplay({ gameId, isHost }: NumberDisplayProps) {
         return;
       }
 
-      // Pick a random number
       const randomIndex = Math.floor(Math.random() * availableNumbers.length);
       const newNumber = availableNumbers[randomIndex];
 
@@ -86,16 +101,30 @@ export default function NumberDisplay({ gameId, isHost }: NumberDisplayProps) {
         })
         .eq('id', gameId);
 
-      if (error) throw error;
+      if (error) {
+        throw new Error(error.message);
+      }
 
-      // Play sound
-      const audio = new Audio('/number-called.mp3');
-      audio.play().catch(console.error);
+      if (soundEnabled) {
+        try {
+          await numberSound.play();
+        } catch (error) {
+          console.error('Error playing sound:', error instanceof Error ? error.message : error);
+        }
+      }
     } catch (error) {
       console.error('Error calling number:', error);
-      toast.error('Failed to call number');
+      toast.error(error instanceof Error ? error.message : 'Failed to call number');
     }
   };
+
+  useEffect(() => {
+    if (currentNumber !== null && soundEnabled) {
+      void numberSound.play().catch((error) => {
+        console.error('Error playing sound:', error instanceof Error ? error.message : error);
+      });
+    }
+  }, [currentNumber, soundEnabled]);
 
   if (loading) {
     return (
@@ -107,35 +136,102 @@ export default function NumberDisplay({ gameId, isHost }: NumberDisplayProps) {
   }
 
   return (
-    <div className="bg-gray-900 p-4 rounded-lg shadow-lg text-center">
-      {/* Current Number */}
-      <AnimatePresence mode="wait">
-        {currentNumber && (
-          <motion.div
-            key={currentNumber}
-            initial={{ scale: 0.5, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            exit={{ scale: 0.5, opacity: 0 }}
-            className="relative mb-6"
-          >
-            <span className="text-6xl font-bold text-white">{currentNumber}</span>
-          </motion.div>
-        )}
-      </AnimatePresence>
+    <div className="bg-gray-800 rounded-lg p-4">
+      {/* Header */}
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-2">
+          <History className="w-5 h-5 text-blue-400" />
+          <h2 className="text-lg font-semibold text-white">Numbers</h2>
+        </div>
+        <button
+          onClick={() => setSoundEnabled(!soundEnabled)}
+          className="p-2 hover:bg-gray-700 rounded-lg transition-colors"
+        >
+          {soundEnabled ? (
+            <Volume2 className="w-5 h-5 text-blue-400" />
+          ) : (
+            <VolumeX className="w-5 h-5 text-gray-400" />
+          )}
+        </button>
+      </div>
 
-      {/* Last Called Numbers */}
-      <div className="flex flex-wrap gap-2 justify-center">
-        {lastNumbers.slice(-10).reverse().map((number, index) => (
-          <motion.div
-            key={`${number}-${index}`}
-            initial={{ scale: 0.8, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            className={`w-10 h-10 rounded-full flex items-center justify-center text-sm font-medium
-              ${number === currentNumber ? 'bg-cyan-600 text-white' : 'bg-gray-800 text-gray-300'}`}
-          >
-            {number}
-          </motion.div>
-        ))}
+      {/* Current Number */}
+      <div className="relative mb-6">
+        <AnimatePresence mode="wait">
+          {currentNumber !== null ? (
+            <motion.div
+              key={currentNumber}
+              initial={{ opacity: 0, scale: 0.5 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 1.5 }}
+              className="flex flex-col items-center"
+            >
+              <motion.div
+                animate={{ scale: [1, 1.1, 1] }}
+                transition={{ duration: 1, repeat: Infinity }}
+                className="text-6xl font-bold text-blue-400 mb-2"
+              >
+                {currentNumber}
+              </motion.div>
+              <div className="text-sm text-gray-400">Current Number</div>
+            </motion.div>
+          ) : (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              className="text-center py-8 text-gray-400"
+            >
+              Waiting for next number...
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+
+      {/* Last Numbers */}
+      <div>
+        <h3 className="text-sm text-gray-400 mb-2">Last Numbers</h3>
+        <div className="grid grid-cols-8 gap-2">
+          <AnimatePresence>
+            {lastNumbers.map((number, index) => (
+              <motion.div
+                key={`${number}-${index}`}
+                initial={{ opacity: 0, scale: 0 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0 }}
+                transition={{ delay: index * 0.1 }}
+                className={`aspect-square flex items-center justify-center rounded-lg text-sm font-medium
+                  ${index === 0 
+                    ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30' 
+                    : 'bg-gray-700 text-gray-300'}`}
+              >
+                {number}
+              </motion.div>
+            )).reverse()}
+          </AnimatePresence>
+          {lastNumbers.length === 0 && (
+            <div className="col-span-8 text-center py-4 text-gray-500">
+              No numbers called yet
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Number Board */}
+      <div className="mt-6">
+        <h3 className="text-sm text-gray-400 mb-2">Number Board</h3>
+        <div className="grid grid-cols-10 gap-1">
+          {Array.from({ length: 90 }, (_, i) => i + 1).map((number) => (
+            <div
+              key={number}
+              className={`aspect-square flex items-center justify-center rounded-md text-xs font-medium
+                ${lastNumbers.includes(number) 
+                  ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30' 
+                  : 'bg-gray-700 text-gray-300'}`}
+            >
+              {number}
+            </div>
+          ))}
+        </div>
       </div>
 
       {/* Call Number Button (Host Only) */}
@@ -150,4 +246,6 @@ export default function NumberDisplay({ gameId, isHost }: NumberDisplayProps) {
       )}
     </div>
   );
-}
+};
+
+export default NumberDisplay;

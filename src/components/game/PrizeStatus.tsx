@@ -1,140 +1,111 @@
-import { useEffect, useState } from 'react';
-import { Trophy, Check } from 'lucide-react';
-import { supabase } from '../../lib/supabase';
-import toast from 'react-hot-toast';
-import { motion, AnimatePresence } from 'framer-motion';
-
-interface PrizeStatus {
-  early_five: boolean;
-  top_line: boolean;
-  middle_line: boolean;
-  bottom_line: boolean;
-  full_house: boolean;
-}
+import React from 'react';
+import { motion } from 'framer-motion';
+import { Trophy, Crown, ArrowRight } from 'lucide-react';
+import type { Winner } from '../../types/game';
 
 interface PrizeStatusProps {
-  gameId: string;
-  onPrizeClaim?: (prizeType: keyof PrizeStatus) => void;
+  prizes: {
+    fullHouse: number;
+    topLine: number;
+    middleLine: number;
+    bottomLine: number;
+    earlyFive: number;
+  };
+  winners: Winner[];
+  totalPrizePool: number;
 }
 
-const prizeDetails = {
-  early_five: { name: 'Early Five', description: 'First to mark any 5 numbers' },
-  top_line: { name: 'Top Line', description: 'Complete the top line' },
-  middle_line: { name: 'Middle Line', description: 'Complete the middle line' },
-  bottom_line: { name: 'Bottom Line', description: 'Complete the bottom line' },
-  full_house: { name: 'Full House', description: 'Complete the entire ticket' }
+const prizeNames = {
+  FULL_HOUSE: 'Full House',
+  TOP_LINE: 'Top Line',
+  MIDDLE_LINE: 'Middle Line',
+  BOTTOM_LINE: 'Bottom Line',
+  EARLY_FIVE: 'Early Five',
 };
 
-export default function PrizeStatus({ gameId, onPrizeClaim }: PrizeStatusProps) {
-  const [prizes, setPrizes] = useState<PrizeStatus>({
-    early_five: false,
-    top_line: false,
-    middle_line: false,
-    bottom_line: false,
-    full_house: false
-  });
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    loadPrizeStatus();
-
-    // Subscribe to prize status updates
-    const channel = supabase
-      .channel(`game-prizes-${gameId}`)
-      .on(
-        'postgres_changes',
-        {
-          event: 'UPDATE',
-          schema: 'public',
-          table: 'games',
-          filter: `id=eq.${gameId}`,
-        },
-        (payload) => {
-          const winning_pattern = payload.new.winning_pattern;
-          setPrizes(winning_pattern);
-
-          // Play sound for newly won prizes
-          const newPrizes = Object.entries(winning_pattern).filter(
-            ([key, value]) => value && !prizes[key as keyof PrizeStatus]
-          );
-          
-          if (newPrizes.length > 0) {
-            const audio = new Audio('/prize-won.mp3');
-            audio.play().catch(console.error);
-          }
-        }
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
+const PrizeStatus: React.FC<PrizeStatusProps> = ({ prizes, winners, totalPrizePool }) => {
+  const getPrizeStatus = (prizeType: keyof typeof prizeNames) => {
+    const winner = winners.find(w => w.prizeType === prizeType);
+    return {
+      claimed: !!winner,
+      winner,
+      amount: prizes[prizeType.toLowerCase().replace('_', '') as keyof typeof prizes],
     };
-  }, [gameId]);
-
-  const loadPrizeStatus = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('games')
-        .select('winning_pattern')
-        .eq('id', gameId)
-        .single();
-
-      if (error) throw error;
-      setPrizes(data.winning_pattern);
-      setLoading(false);
-    } catch (error) {
-      console.error('Error loading prize status:', error);
-      toast.error('Failed to load prize status');
-      setLoading(false);
-    }
   };
 
-  if (loading) {
-    return (
-      <div className="flex gap-2 overflow-x-auto p-2 animate-pulse">
-        {Array.from({ length: 5 }).map((_, i) => (
-          <div
-            key={i}
-            className="h-10 w-32 bg-gray-800 rounded-full flex-shrink-0"
-          />
-        ))}
-      </div>
-    );
-  }
-
   return (
-    <div className="flex gap-2 overflow-x-auto p-2">
-      <AnimatePresence>
-        {Object.entries(prizeDetails).map(([key, { name, description }]) => {
-          const isWon = prizes[key as keyof PrizeStatus];
+    <div className="bg-gray-800 rounded-lg p-4">
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-2">
+          <Trophy className="w-5 h-5 text-yellow-400" />
+          <h2 className="text-lg font-semibold text-white">Prize Status</h2>
+        </div>
+        <div className="text-sm text-gray-400">
+          Total Pool: ₹{totalPrizePool}
+        </div>
+      </div>
+
+      <div className="space-y-3">
+        {Object.entries(prizeNames).map(([key, name]) => {
+          const status = getPrizeStatus(key as keyof typeof prizeNames);
+          
           return (
             <motion.div
               key={key}
-              initial={{ opacity: 0, scale: 0.9 }}
-              animate={{ opacity: 1, scale: 1 }}
-              className={`relative group flex items-center gap-2 px-4 py-2 rounded-full text-sm whitespace-nowrap cursor-pointer
-                ${
-                  isWon
-                    ? 'bg-green-500/20 text-green-400 border border-green-500/30'
-                    : 'bg-gray-800 text-gray-400 border border-gray-700 hover:bg-gray-700/50'
-                }`}
-              onClick={() => !isWon && onPrizeClaim?.(key as keyof PrizeStatus)}
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              className={`p-3 rounded-lg border ${
+                status.claimed
+                  ? 'bg-green-500/10 border-green-500/20'
+                  : 'bg-gray-700/50 border-gray-600/20'
+              }`}
             >
-              {isWon ? (
-                <Check className="w-4 h-4" />
-              ) : (
-                <Trophy className="w-4 h-4" />
-              )}
-              <span>{name}</span>
-
-              {/* Tooltip */}
-              <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-3 py-1 bg-gray-900 text-gray-300 text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-normal max-w-xs text-center">
-                {description}
+              <div className="flex items-center justify-between mb-1">
+                <div className="flex items-center gap-2">
+                  {status.claimed && (
+                    <Crown className="w-4 h-4 text-yellow-400" />
+                  )}
+                  <span className={`font-medium ${
+                    status.claimed ? 'text-green-400' : 'text-white'
+                  }`}>
+                    {name}
+                  </span>
+                </div>
+                <span className="text-sm text-gray-400">
+                  ₹{status.amount}
+                </span>
               </div>
+
+              {status.winner && (
+                <motion.div
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: 'auto' }}
+                  className="mt-2 flex items-center gap-2"
+                >
+                  <img
+                    src={status.winner.avatar}
+                    alt={status.winner.name}
+                    className="w-6 h-6 rounded-full"
+                  />
+                  <span className="text-sm text-gray-300">
+                    {status.winner.name}
+                  </span>
+                  <motion.div
+                    initial={{ scale: 0 }}
+                    animate={{ scale: 1 }}
+                    className="ml-auto flex items-center gap-1 text-xs text-yellow-400"
+                  >
+                    <Trophy className="w-3 h-3" />
+                    <span>Winner!</span>
+                  </motion.div>
+                </motion.div>
+              )}
             </motion.div>
           );
         })}
-      </AnimatePresence>
+      </div>
     </div>
   );
-}
+};
+
+export default PrizeStatus;
