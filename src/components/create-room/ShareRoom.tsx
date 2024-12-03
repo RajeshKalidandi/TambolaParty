@@ -9,7 +9,7 @@ interface ShareRoomProps {
 }
 
 interface RoomDetails {
-  code: string;
+  room_code: string;
   name: string;
   ticket_price: number;
   payment_details: {
@@ -20,7 +20,8 @@ interface RoomDetails {
 
 export default function ShareRoom({ roomId }: ShareRoomProps) {
   const [roomDetails, setRoomDetails] = useState<RoomDetails | null>(null);
-  const shareUrl = `${window.location.origin}/join/${roomId}`;
+  const [isLoading, setIsLoading] = useState(true);
+  const shareUrl = `${window.location.origin}/join/${roomDetails?.room_code || ''}`;
 
   useEffect(() => {
     loadRoomDetails();
@@ -28,9 +29,10 @@ export default function ShareRoom({ roomId }: ShareRoomProps) {
 
   const loadRoomDetails = async () => {
     try {
+      setIsLoading(true);
       const { data, error } = await supabase
         .from('rooms')
-        .select('code, name, ticket_price, payment_details')
+        .select('room_code, name, ticket_price, payment_details')
         .eq('id', roomId)
         .single();
 
@@ -38,25 +40,47 @@ export default function ShareRoom({ roomId }: ShareRoomProps) {
       setRoomDetails(data as RoomDetails);
     } catch (error) {
       console.error('Error loading room details:', error);
+      toast.error('Failed to load room details');
+    } finally {
+      setIsLoading(false);
     }
   };
 
-  const handleCopy = (text: string) => {
-    navigator.clipboard.writeText(text);
-    toast.success('Copied to clipboard!');
+  const handleCopy = async (text: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      toast.success('Copied to clipboard!');
+    } catch (error) {
+      toast.error('Failed to copy to clipboard');
+    }
   };
 
   const handleWhatsAppShare = () => {
     if (!roomDetails) return;
     
-    const text = `Join my Tambola game!\n\nRoom: ${roomDetails.name}\nCode: ${roomDetails.code}\nTicket Price: ₹${roomDetails.ticket_price}\nUPI ID: ${roomDetails.payment_details.upiId}\n\n${shareUrl}`;
-    window.open(`https://wa.me/?text=${encodeURIComponent(text)}`);
+    const message = encodeURIComponent(
+      `Join my Tambola game!\n\n` +
+      `🎮 Room: ${roomDetails.name}\n` +
+      `🎫 Code: ${roomDetails.room_code}\n` +
+      `💰 Price: ₹${roomDetails.ticket_price}\n\n` +
+      `Join here: ${shareUrl}`
+    );
+    
+    window.open(`https://wa.me/?text=${message}`, '_blank');
   };
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center p-8">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
+      </div>
+    );
+  }
 
   if (!roomDetails) {
     return (
-      <div className="flex justify-center items-center h-48">
-        <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-blue-500"></div>
+      <div className="text-center p-8">
+        <p className="text-gray-600">Failed to load room details</p>
       </div>
     );
   }
@@ -64,55 +88,65 @@ export default function ShareRoom({ roomId }: ShareRoomProps) {
   return (
     <div className="space-y-6 animate-fadeIn">
       <div className="text-center">
-        <h3 className="text-2xl font-bold mb-2">Room Created Successfully!</h3>
-        <p className="text-gray-600 mb-4">Share these details with your players</p>
-        
-        <div className="bg-gray-100 p-4 rounded-lg inline-block mb-4">
-          <span className="text-3xl font-mono tracking-wider">{roomDetails.code}</span>
+        <h3 className="text-lg font-medium text-gray-900">Share Room</h3>
+        <p className="mt-1 text-sm text-gray-500">
+          Share the room code or link with your friends
+        </p>
+      </div>
+
+      <div className="bg-gray-50 p-4 rounded-lg">
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <p className="text-sm font-medium text-gray-700">Room Code</p>
+            <p className="text-2xl font-bold text-indigo-600">{roomDetails.room_code}</p>
+          </div>
+          <button
+            onClick={() => handleCopy(roomDetails.room_code)}
+            className="p-2 text-gray-500 hover:text-indigo-600 transition-colors"
+          >
+            <Copy className="h-5 w-5" />
+          </button>
         </div>
 
-        <div className="flex justify-center items-center gap-2 text-lg text-gray-700">
-          <IndianRupee className="w-5 h-5" />
-          <span>{roomDetails.ticket_price} per ticket</span>
+        <div className="flex items-center justify-between">
+          <div className="flex-1">
+            <p className="text-sm font-medium text-gray-700">Share Link</p>
+            <p className="text-sm text-gray-500 truncate">{shareUrl}</p>
+          </div>
+          <button
+            onClick={() => handleCopy(shareUrl)}
+            className="p-2 text-gray-500 hover:text-indigo-600 transition-colors"
+          >
+            <Copy className="h-5 w-5" />
+          </button>
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-4">
-        <div className="flex flex-col items-center">
-          <p className="text-sm font-medium text-gray-700 mb-2">Room QR Code</p>
-          <QRCodeSVG value={shareUrl} size={150} />
-        </div>
-        <div className="flex flex-col items-center">
-          <p className="text-sm font-medium text-gray-700 mb-2">Payment QR Code</p>
-          <img 
-            src={roomDetails.payment_details.qrImage} 
-            alt="Payment QR"
-            className="w-[150px] h-[150px] object-contain"
-          />
-        </div>
-      </div>
-
-      <div className="bg-blue-50 p-4 rounded-lg">
-        <h4 className="font-medium text-blue-900 mb-2">Payment Details</h4>
-        <p className="text-sm text-blue-800">UPI ID: {roomDetails.payment_details.upiId}</p>
-      </div>
-
-      <div className="space-y-3">
-        <button
-          onClick={() => handleCopy(shareUrl)}
-          className="w-full flex items-center justify-center gap-2 bg-gray-100 text-gray-800 py-3 rounded-lg hover:bg-gray-200 transition-colors"
-        >
-          <Copy className="w-5 h-5" />
-          Copy Link
-        </button>
-
+      <div className="flex justify-center space-x-4">
         <button
           onClick={handleWhatsAppShare}
-          className="w-full flex items-center justify-center gap-2 bg-green-500 text-white py-3 rounded-lg hover:bg-green-600 transition-colors"
+          className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
         >
-          <Share2 className="w-5 h-5" />
+          <Share2 className="h-5 w-5 mr-2" />
           Share on WhatsApp
         </button>
+      </div>
+
+      <div className="mt-6 border-t border-gray-200 pt-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-sm font-medium text-gray-700">Ticket Price</p>
+            <p className="text-lg font-semibold text-gray-900 flex items-center">
+              <IndianRupee className="h-4 w-4 mr-1" />
+              {roomDetails.ticket_price}
+            </p>
+          </div>
+          <QRCodeSVG
+            value={roomDetails.payment_details.qrImage}
+            size={96}
+            className="border-2 border-gray-200 rounded-lg p-1"
+          />
+        </div>
       </div>
     </div>
   );

@@ -7,6 +7,7 @@ export interface RoomFormData {
   maxPlayers: number;
   ticketPrice: number;
   multipleTickets: boolean;
+  roomId?: string;
   prizes: {
     fullHouse: number;
     earlyFive: number;
@@ -17,5 +18,6 @@ export interface RoomFormData {
   paymentDetails: {
     upiId: string;
     qrImage: string;
+    isValid: boolean;
   };
 }

@@ -1,7 +1,9 @@
 import React, { useState } from 'react';
-import { QrCode, Upload } from 'lucide-react';
+import { Upload } from 'lucide-react';
 import type { RoomFormData } from '../../types/room-creation';
 import { supabase } from '../../lib/supabase';
+import toast from 'react-hot-toast';
+import { PaymentDetails } from '../../types/payment';
 
 interface PaymentSetupProps {
   data: RoomFormData;
@@ -17,39 +19,83 @@ export default function PaymentSetup({ data, onChange }: PaymentSetupProps) {
       const file = e.target.files?.[0];
       if (!file) return;
 
-      // Upload to Supabase Storage
-      const fileExt = file.name.split('.').pop();
-      const fileName = `${Math.random()}.${fileExt}`;
-      const { data: uploadData, error: uploadError } = await supabase.storage
-        .from('qr-codes')
-        .upload(fileName, file);
+      // File validations
+      const allowedTypes = ['image/png', 'image/jpeg', 'image/jpg'];
+      if (!allowedTypes.includes(file.type)) {
+        toast.error('Please upload a valid image file (PNG or JPG)');
+        return;
+      }
+
+      if (file.size > 2 * 1024 * 1024) {
+        toast.error('File size should be less than 2MB');
+        return;
+      }
+
+      // Get current user
+      const { data: userData } = await supabase.auth.getUser();
+      if (!userData.user) {
+        throw new Error('Not authenticated');
+      }
+
+      // Create unique filename
+      const timestamp = new Date().getTime();
+      const randomString = Math.random().toString(36).substring(7);
+      const fileExt = file.name.split('.').pop()?.toLowerCase() || 'png';
+      const fileName = `${userData.user.id}/qr_${timestamp}_${randomString}.${fileExt}`;
+
+      // Upload to storage
+      const { error: uploadError } = await supabase.storage
+        .from('payment-qr-codes')
+        .upload(fileName, file, {
+          contentType: `image/${fileExt}`,
+          cacheControl: '3600',
+          upsert: true
+        });
 
       if (uploadError) throw uploadError;
 
       // Get public URL
-      const { data: { publicUrl } } = supabase.storage
-        .from('qr-codes')
+      const { data: urlData } = supabase.storage
+        .from('payment-qr-codes')
         .getPublicUrl(fileName);
 
+      if (!urlData.publicUrl) {
+        throw new Error('Failed to get public URL');
+      }
+
+      // Save to database
+      const { error: dbError } = await supabase
+        .from('payment_qr_codes')
+        .insert({
+          user_id: userData.user.id,
+          qr_image_url: urlData.publicUrl,
+          upi_id: data.paymentDetails?.upiId || ''
+        });
+
+      if (dbError) throw dbError;
+
+      // Update form
       onChange({
         paymentDetails: {
           ...data.paymentDetails,
-          qrImage: publicUrl
+          qrImage: urlData.publicUrl,
+          isValid: Boolean(data.paymentDetails?.upiId?.match(/^[a-zA-Z0-9._-]+@[a-zA-Z0-9]+$/))
         }
       });
+
+      toast.success('QR code uploaded successfully');
     } catch (error) {
-      console.error('Error uploading QR:', error);
+      console.error('Error:', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to upload QR code');
     } finally {
       setUploading(false);
     }
   };
 
-  const handleUPIChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleUPIChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const upiId = e.target.value;
-    // Basic UPI ID validation
-    const upiRegex = /^[a-zA-Z0-9._-]+@[a-zA-Z0-9]+$/;
-    const isValid = upiRegex.test(upiId);
-
+    const isValid = Boolean(upiId.match(/^[a-zA-Z0-9._-]+@[a-zA-Z0-9]+$/));
+    
     onChange({
       paymentDetails: {
         ...data.paymentDetails,
@@ -60,78 +106,62 @@ export default function PaymentSetup({ data, onChange }: PaymentSetupProps) {
   };
 
   return (
-    <div className="space-y-6 animate-fadeIn">
+    <div className="space-y-4">
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-2">
+        <label htmlFor="upiId" className="block text-sm font-medium text-gray-700">
           UPI ID
         </label>
-        <div className="mt-1 relative rounded-md shadow-sm">
-          <input
-            type="text"
-            value={data.paymentDetails?.upiId || ''}
-            onChange={handleUPIChange}
-            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-            placeholder="yourname@upi"
-          />
-          {data.paymentDetails?.upiId && (
-            <div className="absolute inset-y-0 right-0 pr-3 flex items-center">
-              {data.paymentDetails.isValid ? (
-                <span className="text-green-500">✓</span>
-              ) : (
-                <span className="text-red-500">✗</span>
-              )}
-            </div>
-          )}
-        </div>
+        <input
+          type="text"
+          id="upiId"
+          value={data.paymentDetails?.upiId || ''}
+          onChange={handleUPIChange}
+          placeholder="example@upi"
+          className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+        />
       </div>
 
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-2">
-          QR Code Image
-        </label>
-        <div className="mt-1 flex justify-center px-6 pt-5 pb-6 border-2 border-gray-300 border-dashed rounded-lg">
-          {data.paymentDetails?.qrImage ? (
-            <div className="relative w-48 h-48 mx-auto">
-              <img
-                src={data.paymentDetails.qrImage}
-                alt="Payment QR"
-                className="w-full h-full object-contain"
-              />
-              <button
-                onClick={() => onChange({
-                  paymentDetails: {
-                    ...data.paymentDetails,
-                    qrImage: ''
-                  }
-                })}
-                className="absolute -top-2 -right-2 bg-red-500 text-white p-1 rounded-full hover:bg-red-600 transition-colors"
-              >
-                ×
-              </button>
-            </div>
-          ) : (
-            <div className="space-y-1 text-center">
-              {uploading ? (
-                <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500 mx-auto"></div>
-              ) : (
-                <>
-                  <Upload className="mx-auto h-12 w-12 text-gray-400" />
-                  <div className="flex text-sm text-gray-600">
-                    <label className="relative cursor-pointer bg-white rounded-md font-medium text-blue-600 hover:text-blue-500">
-                      <span>Upload QR code</span>
-                      <input
-                        type="file"
-                        className="sr-only"
-                        accept="image/*"
-                        onChange={handleQRUpload}
-                      />
-                    </label>
-                  </div>
-                  <p className="text-xs text-gray-500">PNG, JPG up to 5MB</p>
-                </>
-              )}
-            </div>
-          )}
+        <label className="block text-sm font-medium text-gray-700">Payment QR Code</label>
+        <div className="mt-1 flex justify-center px-6 pt-5 pb-6 border-2 border-gray-300 border-dashed rounded-md">
+          <div className="space-y-1 text-center">
+            {data.paymentDetails?.qrImage ? (
+              <div className="relative">
+                <img
+                  src={data.paymentDetails.qrImage}
+                  alt="Payment QR Code"
+                  className="mx-auto h-32 w-32 object-cover"
+                />
+                <button
+                  onClick={() => document.getElementById('qr-upload')?.click()}
+                  className="mt-2 text-sm text-indigo-600 hover:text-indigo-500"
+                >
+                  Change QR Code
+                </button>
+              </div>
+            ) : (
+              <div className="flex flex-col items-center">
+                <Upload className="mx-auto h-12 w-12 text-gray-400" />
+                <div className="flex text-sm text-gray-600">
+                  <label
+                    htmlFor="qr-upload"
+                    className="relative cursor-pointer rounded-md font-medium text-indigo-600 hover:text-indigo-500 focus-within:outline-none focus-within:ring-2 focus-within:ring-offset-2 focus-within:ring-indigo-500"
+                  >
+                    <span>Upload QR Code</span>
+                    <input
+                      id="qr-upload"
+                      type="file"
+                      className="sr-only"
+                      onChange={handleQRUpload}
+                      accept="image/*"
+                      disabled={uploading}
+                    />
+                  </label>
+                </div>
+                <p className="text-xs text-gray-500">PNG, JPG up to 2MB</p>
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>

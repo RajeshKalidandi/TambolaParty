@@ -49,3 +49,19 @@ export interface PaymentVerification {
   verifiedAt?: Date;
   hostNote?: string;
 }
+
+export interface PaymentQRCode {
+  id: string;
+  user_id: string;
+  qr_image_url: string;
+  upi_id: string;
+  created_at: string;
+  updated_at: string;
+  is_active: boolean;
+}
+
+export interface PaymentDetails {
+  upiId: string;
+  qrImage: string;
+  isValid: boolean;
+}

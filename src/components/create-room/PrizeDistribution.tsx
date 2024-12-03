@@ -1,4 +1,4 @@
-import React from 'react';
+import { useEffect } from 'react';
 import { Pie } from 'react-chartjs-2';
 import { Chart as ChartJS, ArcElement, Tooltip, Legend } from 'chart.js';
 import { RoomFormData } from '../../types/room-creation';
@@ -9,9 +9,10 @@ ChartJS.register(ArcElement, Tooltip, Legend);
 interface PrizeDistributionProps {
   data: RoomFormData;
   onChange: (data: Partial<RoomFormData>) => void;
+  onValidityChange?: (isValid: boolean) => void;
 }
 
-export default function PrizeDistribution({ data }: PrizeDistributionProps) {
+export default function PrizeDistribution({ data, onChange, onValidityChange }: PrizeDistributionProps) {
   const totalPrizePool = data.ticketPrice * data.maxPlayers * 0.9; // 90% of total pool
 
   const chartData = {
@@ -30,6 +31,27 @@ export default function PrizeDistribution({ data }: PrizeDistributionProps) {
     earlyFive: totalPrizePool * 0.2,
     lines: totalPrizePool * 0.4 / 3, // Split equally between 3 lines
   };
+
+  useEffect(() => {
+    // Update prize values in form data
+    onChange({
+      prizes: {
+        fullHouse: prizes.fullHouse,
+        earlyFive: prizes.earlyFive,
+        topLine: prizes.lines,
+        middleLine: prizes.lines,
+        bottomLine: prizes.lines,
+      }
+    });
+    
+    // Validate prizes
+    const isValid = totalPrizePool > 0 && 
+                   prizes.fullHouse > 0 && 
+                   prizes.earlyFive > 0 && 
+                   prizes.lines > 0;
+                   
+    onValidityChange?.(isValid);
+  }, [totalPrizePool, prizes.fullHouse, prizes.earlyFive, prizes.lines]);
 
   return (
     <div className="space-y-6 animate-fadeIn">

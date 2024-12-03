@@ -1,10 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import { Edit, Wallet, Trophy, History, ArrowRight } from 'lucide-react';
 import { useAuth } from '../lib/auth/AuthContext';
-import { supabase } from '../lib/supabase';
+import { supabase, Database } from '../lib/supabase';
 import { motion } from 'framer-motion';
 import { toast } from 'react-hot-toast';
-import type { Database } from '../lib/supabase/database.types';
+import { useNavigate } from 'react-router-dom';
 
 type Player = Database['public']['Tables']['players']['Row'];
 
@@ -17,11 +17,106 @@ interface PlayerData extends Omit<Player, 'id' | 'created_at'> {
   rating: number;
 }
 
+// WithdrawModal Component
+const WithdrawModal: React.FC<{ 
+  isOpen: boolean; 
+  onClose: () => void;
+  playerData: PlayerData | null;
+  userId: string;
+}> = ({ isOpen, onClose, playerData, userId }) => {
+  const [amount, setAmount] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+
+  const handleWithdraw = async () => {
+    if (!userId || !amount || isNaN(Number(amount))) {
+      toast.error('Please enter a valid amount');
+      return;
+    }
+
+    const withdrawAmount = Number(amount);
+    if (withdrawAmount <= 0 || withdrawAmount > (playerData?.wallet_balance || 0)) {
+      toast.error('Invalid withdrawal amount');
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      const { error } = await supabase
+        .from('players')
+        .update({ 
+          wallet_balance: (playerData?.wallet_balance || 0) - withdrawAmount 
+        })
+        .eq('id', userId);
+
+      if (error) throw error;
+
+      toast.success(`Successfully withdrew ₹${withdrawAmount}`);
+      onClose();
+    } catch (error) {
+      toast.error('Failed to process withdrawal');
+      console.error('Withdrawal error:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4">
+      <motion.div 
+        initial={{ scale: 0.9, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        className="bg-purple-900 rounded-xl p-6 w-full max-w-md"
+      >
+        <h2 className="text-xl font-bold mb-4">Withdraw Funds</h2>
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm text-purple-300 mb-1">Amount (₹)</label>
+            <input
+              type="number"
+              value={amount}
+              onChange={(e) => setAmount(e.target.value)}
+              className="w-full bg-purple-800 rounded px-3 py-2 text-white"
+              placeholder="Enter amount"
+              min="0"
+              max={playerData?.wallet_balance}
+            />
+          </div>
+          <div className="text-sm text-purple-300">
+            Available Balance: ₹{playerData?.wallet_balance}
+          </div>
+          <div className="flex space-x-3">
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex-1 bg-purple-700 hover:bg-purple-600 transition-colors rounded-lg p-2"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={() => void handleWithdraw()}
+              disabled={isLoading}
+              className="flex-1 bg-purple-500 hover:bg-purple-400 transition-colors rounded-lg p-2 
+                       disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {isLoading ? 'Processing...' : 'Withdraw'}
+            </button>
+          </div>
+        </div>
+      </motion.div>
+    </div>
+  );
+};
+
 const PlayerProfile: React.FC = () => {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [playerData, setPlayerData] = useState<PlayerData | null>(null);
   const [isEditing, setIsEditing] = useState(false);
   const [newUsername, setNewUsername] = useState('');
+  const [isWithdrawModalOpen, setIsWithdrawModalOpen] = useState(false);
 
   useEffect(() => {
     // Fetch initial player data
@@ -45,26 +140,28 @@ const PlayerProfile: React.FC = () => {
 
     void fetchPlayerData();
 
-    // Subscribe to real-time changes
-    const subscription = supabase
-      .channel('player_changes')
-      .on<PlayerData>(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'players',
-          filter: `id=eq.${user?.id}`,
-        },
-        (payload) => {
-          setPlayerData(payload.new);
-        }
-      )
-      .subscribe();
+     // Subscribe to real-time changes
+     const subscription = supabase
+     .channel('player_changes')
+     .on<PlayerData>(
+       'postgres_changes',
+       {
+         event: '*',
+         schema: 'public',
+         table: 'players',
+         filter: `id=eq.${user?.id}`,
+       },
+       (payload) => {
+         if (payload.new && 'username' in payload.new) {
+           setPlayerData(payload.new as PlayerData);
+         }
+       }
+     )
+     .subscribe();
 
-    return () => {
-      void subscription.unsubscribe();
-    };
+   return () => {
+     void subscription.unsubscribe();
+   };
   }, [user]);
 
   const handleUpdateUsername = async () => {
@@ -85,14 +182,28 @@ const PlayerProfile: React.FC = () => {
   };
 
   const handleButtonClick = (action: string) => {
-    // Handle button clicks (to be implemented)
-    console.log('Action clicked:', action);
+    switch (action) {
+      case 'Join Game':
+        navigate('/lobby');
+        break;
+      case 'Buy Tickets':
+        navigate('/tickets');
+        break;
+      case 'Withdraw':
+        setIsWithdrawModalOpen(true);
+        break;
+      case 'History':
+        navigate('/history');
+        break;
+      default:
+        console.log('Action not implemented:', action);
+    }
   };
 
   if (!playerData) {
     return (
       <div className="min-h-screen bg-gradient-to-b from-purple-900 via-purple-800 to-indigo-900 
-                      flex items-center justify-center">
+                    flex items-center justify-center">
         <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-white"></div>
       </div>
     );
@@ -132,7 +243,7 @@ const PlayerProfile: React.FC = () => {
                 <input
                   type="text"
                   value={newUsername}
-                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setNewUsername(e.target.value)}
+                  onChange={(e) => setNewUsername(e.target.value)}
                   className="bg-purple-800 rounded px-2 py-1 text-white"
                 />
                 <button
@@ -244,6 +355,14 @@ const PlayerProfile: React.FC = () => {
           </motion.div>
         </div>
       </motion.div>
+
+      {/* Render WithdrawModal */}
+      <WithdrawModal 
+        isOpen={isWithdrawModalOpen}
+        onClose={() => setIsWithdrawModalOpen(false)}
+        playerData={playerData}
+        userId={user?.id || ''}
+      />
     </div>
   );
 };

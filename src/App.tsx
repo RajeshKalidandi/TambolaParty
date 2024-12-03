@@ -17,6 +17,7 @@ import Register from './pages/Register';
 import ForgotPassword from './pages/ForgotPassword';
 import Tickets from './pages/Tickets';
 import Notifications from './pages/Notifications';
+import JoinRoom from './pages/JoinRoom';
 
 const router = createBrowserRouter([
   {
@@ -130,6 +131,10 @@ const router = createBrowserRouter([
         <QuickJoin />
       </ProtectedRoute>
     ),
+  },
+  {
+    path: '/join/:code',
+    element: <JoinRoom />,
   },
   {
     path: '*',

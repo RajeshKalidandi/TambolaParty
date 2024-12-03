@@ -28,6 +28,20 @@ export interface Database {
         Insert: Omit<Database['public']['Tables']['rooms']['Row'], 'id' | 'created_at'>;
         Update: Partial<Database['public']['Tables']['rooms']['Insert']>;
       };
+      players: {
+        Row: {
+          id: string;
+          username: string;
+          avatar_url: string;
+          wallet_balance: number;
+          games_played: number;
+          games_won: number;
+          rating: number;
+          created_at: string;
+        };
+        Insert: Omit<Database['public']['Tables']['players']['Row'], 'id' | 'created_at'>;
+        Update: Partial<Database['public']['Tables']['players']['Row']>;
+      };
       payment_verifications: {
         Row: {
           id: string;
