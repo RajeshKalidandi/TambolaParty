@@ -1,4 +1,3 @@
-import React from 'react';
 import { ClipboardList, Users, Trophy } from 'lucide-react';
 
 const Step = ({ number, icon: Icon, title, description }: { number: number, icon: any, title: string, description: string }) => (

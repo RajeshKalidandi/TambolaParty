@@ -14,4 +14,8 @@ export interface RoomFormData {
     middleLine: number;
     bottomLine: number;
   };
+  paymentDetails: {
+    upiId: string;
+    qrImage: string;
+  };
 }

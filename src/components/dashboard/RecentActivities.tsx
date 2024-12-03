@@ -1,71 +1,108 @@
-import { Gamepad, Wallet, MessageSquare } from 'lucide-react';
+import { useState } from 'react';
+import { Gamepad, Wallet, MessageSquare, ChevronLeft, ChevronRight } from 'lucide-react';
 import type { RecentActivity } from '../../types/dashboard';
 
 interface RecentActivitiesProps {
   activities: RecentActivity[];
+  itemsPerPage?: number;
 }
 
-export default function RecentActivities({ activities }: RecentActivitiesProps) {
-  const getIcon = (type: RecentActivity['type']) => {
-    switch (type) {
-      case 'game':
-        return Gamepad;
-      case 'withdrawal':
-        return Wallet;
-      case 'feedback':
-        return MessageSquare;
-      default:
-        return Gamepad;
-    }
+const getActivityIcon = (type: string) => {
+  switch (type) {
+    case 'game':
+      return <Gamepad className="w-8 h-8 text-cyan-500" />;
+    case 'transaction':
+      return <Wallet className="w-8 h-8 text-green-500" />;
+    case 'message':
+      return <MessageSquare className="w-8 h-8 text-purple-500" />;
+    default:
+      return null;
+  }
+};
+
+export default function RecentActivities({ activities, itemsPerPage = 5 }: RecentActivitiesProps) {
+  const [currentPage, setCurrentPage] = useState(1);
+  const totalPages = Math.ceil(activities.length / itemsPerPage);
+  
+  const paginatedActivities = activities.slice(
+    (currentPage - 1) * itemsPerPage,
+    currentPage * itemsPerPage
+  );
+
+  const handlePrevPage = () => {
+    setCurrentPage(prev => Math.max(prev - 1, 1));
   };
 
-  const getStatusColor = (status: string | undefined) => {
-    switch (status) {
-      case 'completed':
-        return 'bg-green-100 text-green-700';
-      case 'pending':
-        return 'bg-yellow-100 text-yellow-700';
-      case 'cancelled':
-        return 'bg-red-100 text-red-700';
-      default:
-        return 'bg-gray-100 text-gray-700';
-    }
+  const handleNextPage = () => {
+    setCurrentPage(prev => Math.min(prev + 1, totalPages));
   };
 
   return (
     <div className="bg-white rounded-xl shadow-sm p-6">
       <h2 className="text-lg font-semibold text-gray-900 mb-4">Recent Activities</h2>
       <div className="space-y-4">
-        {activities.map((activity) => {
-          const Icon = getIcon(activity.type);
-          return (
-            <div key={activity.id} className="flex items-start gap-4">
-              <div className="bg-gray-100 p-2 rounded-lg">
-                <Icon className="w-5 h-5 text-gray-600" />
-              </div>
-              <div className="flex-1">
-                <div className="flex justify-between items-start">
-                  <h3 className="font-medium text-gray-900">{activity.title}</h3>
-                  {activity.amount && (
-                    <span className="text-green-600 font-medium">₹{activity.amount}</span>
-                  )}
-                </div>
-                <p className="text-sm text-gray-500">{activity.description}</p>
-                <div className="flex items-center gap-2 mt-1">
-                  <span className="text-xs text-gray-400">
-                    {new Date(activity.timestamp).toLocaleString()}
+        {paginatedActivities.map((activity) => (
+          <div 
+            key={activity.id} 
+            className="flex items-start gap-4 p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
+          >
+            <div className="flex-shrink-0">
+              {getActivityIcon(activity.type)}
+            </div>
+            <div className="flex-grow min-w-0">
+              <h3 className="text-sm font-medium text-gray-900 truncate">
+                {activity.title}
+              </h3>
+              <p className="text-sm text-gray-600 mt-1">
+                {activity.description}
+              </p>
+              <div className="flex items-center gap-2 mt-2">
+                <span className="text-xs text-gray-500">
+                  {new Date(activity.timestamp).toLocaleDateString('en-US', {
+                    day: 'numeric',
+                    month: 'short',
+                    hour: '2-digit',
+                    minute: '2-digit'
+                  })}
+                </span>
+                {activity.amount && (
+                  <span className={`text-xs font-medium ${
+                    activity.amount > 0 ? 'text-green-600' : 'text-red-600'
+                  }`}>
+                    {activity.amount > 0 ? '+' : ''}{activity.amount} ₹
                   </span>
-                  {activity.status && (
-                    <span className={`text-xs px-2 py-0.5 rounded-full ${getStatusColor(activity.status)}`}>
-                      {activity.status}
-                    </span>
-                  )}
-                </div>
+                )}
               </div>
             </div>
-          );
-        })}
+          </div>
+        ))}
       </div>
+      
+      {totalPages > 1 && (
+        <div className="flex items-center justify-between mt-4 pt-4 border-t">
+          <button
+            onClick={handlePrevPage}
+            disabled={currentPage === 1}
+            className="flex items-center gap-1 text-sm text-gray-600 disabled:opacity-50"
+          >
+            <ChevronLeft className="w-4 h-4" />
+            Previous
+          </button>
+          
+          <span className="text-sm text-gray-600">
+            Page {currentPage} of {totalPages}
+          </span>
+          
+          <button
+            onClick={handleNextPage}
+            disabled={currentPage === totalPages}
+            className="flex items-center gap-1 text-sm text-gray-600 disabled:opacity-50"
+          >
+            Next
+            <ChevronRight className="w-4 h-4" />
+          </button>
+        </div>
+      )}
     </div>
   );
 }

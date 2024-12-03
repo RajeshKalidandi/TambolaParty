@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
-import { Coins, ArrowLeft, CreditCard, Bank, ChevronRight, ArrowDownCircle, ArrowUpCircle } from 'lucide-react';
+import { Coins, ArrowLeft, CreditCard, Building2, ChevronRight, ArrowDownCircle, ArrowUpCircle } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { toast } from 'react-hot-toast';
 import { useAuth } from '../../lib/auth/AuthContext';
@@ -25,13 +25,14 @@ interface BankAccount {
 }
 
 export default function Withdrawal() {
-  const { user } = useAuth();
-  const [balance, setBalance] = useState<number>(0);
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
   const [loading, setLoading] = useState(false);
-  const [showAddBank, setShowAddBank] = useState(false);
+  const [balance, setBalance] = useState(0);
+  const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [withdrawAmount, setWithdrawAmount] = useState('');
+  const bankModalRef = useRef<HTMLDialogElement>(null);
+  const withdrawModalRef = useRef<HTMLDialogElement>(null);
+  const { user } = useAuth();
 
   // Form state for adding bank account
   const [bankForm, setBankForm] = useState({
@@ -42,52 +43,61 @@ export default function Withdrawal() {
   });
 
   useEffect(() => {
-    if (user) {
-      fetchWalletData();
-      fetchTransactions();
-      fetchBankAccounts();
+    if (user?.id) {
+      void fetchWalletData();
+      void fetchBankAccounts();
+      void fetchTransactions();
     }
-  }, [user]);
+  }, [user?.id]);
 
   const fetchWalletData = async () => {
-    const { data, error } = await supabase
-      .from('players')
-      .select('wallet_balance')
-      .eq('id', user?.id)
-      .single();
+    try {
+      const { data, error } = await supabase.rpc('get_wallet_balance', {
+        user_id: user?.id
+      });
 
-    if (!error && data) {
-      setBalance(data.wallet_balance);
-    }
-  };
-
-  const fetchTransactions = async () => {
-    const { data, error } = await supabase
-      .from('transactions')
-      .select('*')
-      .eq('user_id', user?.id)
-      .order('created_at', { ascending: false })
-      .limit(10);
-
-    if (!error && data) {
-      setTransactions(data);
+      if (error) throw error;
+      setBalance(data || 0);
+    } catch (err) {
+      console.error('Failed to fetch wallet data:', err);
+      toast.error('Failed to load wallet balance');
     }
   };
 
   const fetchBankAccounts = async () => {
-    const { data, error } = await supabase
-      .from('bank_accounts')
-      .select('*')
-      .eq('user_id', user?.id);
+    try {
+      const { data, error } = await supabase
+        .from('bank_accounts')
+        .select('*')
+        .eq('user_id', user?.id);
 
-    if (!error && data) {
-      setBankAccounts(data);
+      if (error) throw error;
+      setBankAccounts(data || []);
+    } catch (err) {
+      console.error('Failed to fetch bank accounts:', err);
+      toast.error('Failed to load bank accounts');
+    }
+  };
+
+  const fetchTransactions = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('transactions')
+        .select('*')
+        .eq('user_id', user?.id)
+        .order('created_at', { ascending: false })
+        .limit(10);
+
+      if (error) throw error;
+      setTransactions(data || []);
+    } catch (err) {
+      console.error('Failed to fetch transactions:', err);
+      toast.error('Failed to load transactions');
     }
   };
 
   const handleAddBank = async (e: React.FormEvent) => {
     e.preventDefault();
-    
     if (bankForm.accountNumber !== bankForm.confirmAccountNumber) {
       toast.error('Account numbers do not match');
       return;
@@ -95,23 +105,21 @@ export default function Withdrawal() {
 
     setLoading(true);
     try {
-      const { error } = await supabase
-        .from('bank_accounts')
-        .insert([
-          {
-            user_id: user?.id,
-            account_number: bankForm.accountNumber,
-            ifsc_code: bankForm.ifscCode,
-            account_holder: bankForm.accountHolder,
-            is_primary: bankAccounts.length === 0 // First account is primary
-          }
-        ]);
+      const { error } = await supabase.from('bank_accounts').insert([
+        {
+          user_id: user?.id,
+          account_number: bankForm.accountNumber,
+          ifsc_code: bankForm.ifscCode,
+          account_holder: bankForm.accountHolder,
+          is_primary: bankAccounts.length === 0 // First account is primary
+        }
+      ]);
 
       if (error) throw error;
 
       toast.success('Bank account added successfully');
-      setShowAddBank(false);
-      fetchBankAccounts();
+      bankModalRef.current?.close();
+      void fetchBankAccounts();
       setBankForm({
         accountNumber: '',
         confirmAccountNumber: '',
@@ -145,7 +153,6 @@ export default function Withdrawal() {
 
     setLoading(true);
     try {
-      // Create withdrawal request
       const { error } = await supabase.rpc('create_withdrawal', {
         amount,
         bank_account_id: bankAccounts.find(acc => acc.is_primary)?.id
@@ -155,8 +162,9 @@ export default function Withdrawal() {
 
       toast.success('Withdrawal request submitted successfully');
       setWithdrawAmount('');
-      fetchWalletData();
-      fetchTransactions();
+      withdrawModalRef.current?.close();
+      void fetchWalletData();
+      void fetchTransactions();
     } catch (err) {
       console.error('Withdrawal failed:', err);
       toast.error('Failed to process withdrawal');
@@ -186,14 +194,14 @@ export default function Withdrawal() {
           <div className="text-3xl font-bold mb-4">₹{balance.toFixed(2)}</div>
           <div className="grid grid-cols-2 gap-3">
             <button
-              onClick={() => setShowAddBank(true)}
+              onClick={() => bankModalRef.current?.showModal()}
               className="flex items-center justify-center bg-white/20 hover:bg-white/30 rounded-lg px-4 py-2 transition-colors"
             >
-              <Bank size={18} className="mr-2" />
+              <Building2 size={18} className="mr-2" />
               Add Bank
             </button>
             <button
-              onClick={() => document.getElementById('withdraw-modal')?.showModal()}
+              onClick={() => withdrawModalRef.current?.showModal()}
               className="flex items-center justify-center bg-white/20 hover:bg-white/30 rounded-lg px-4 py-2 transition-colors"
             >
               <CreditCard size={18} className="mr-2" />
@@ -202,8 +210,36 @@ export default function Withdrawal() {
           </div>
         </motion.div>
 
-        {/* Transaction History */}
+        {/* Bank Accounts */}
         <div className="bg-gray-800/50 backdrop-blur-lg rounded-xl p-4 mb-6">
+          <h2 className="text-lg font-bold mb-4">Bank Accounts</h2>
+          <div className="space-y-3">
+            {bankAccounts.map((account) => (
+              <div
+                key={account.id}
+                className="flex items-center justify-between p-3 bg-gray-700/30 rounded-lg"
+              >
+                <div className="flex items-center">
+                  <Building2 size={20} className="text-cyan-400 mr-3" />
+                  <div>
+                    <div className="font-medium">{account.bank_name}</div>
+                    <div className="text-sm text-gray-400">
+                      ****{account.account_number.slice(-4)}
+                    </div>
+                  </div>
+                </div>
+                {account.is_primary && (
+                  <div className="text-xs bg-cyan-500/20 text-cyan-300 px-2 py-1 rounded-full">
+                    Primary
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Transaction History */}
+        <div className="bg-gray-800/50 backdrop-blur-lg rounded-xl p-4">
           <h2 className="text-lg font-bold mb-4">Recent Transactions</h2>
           <div className="space-y-3">
             {transactions.map((tx) => (
@@ -226,49 +262,16 @@ export default function Withdrawal() {
                     </div>
                   </div>
                 </div>
-                <div className={`font-bold ${tx.type === 'credit' ? 'text-green-400' : 'text-red-400'}`}>
-                  {tx.type === 'credit' ? '+' : '-'}₹{tx.amount}
+                <div className={`font-medium ${tx.type === 'credit' ? 'text-green-400' : 'text-red-400'}`}>
+                  {tx.type === 'credit' ? '+' : '-'}₹{tx.amount.toFixed(2)}
                 </div>
               </motion.div>
-            ))}
-            {transactions.length === 0 && (
-              <div className="text-center text-gray-400 py-4">
-                No transactions yet
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Bank Accounts */}
-        <div className="bg-gray-800/50 backdrop-blur-lg rounded-xl p-4">
-          <h2 className="text-lg font-bold mb-4">Bank Accounts</h2>
-          <div className="space-y-3">
-            {bankAccounts.map((account) => (
-              <div
-                key={account.id}
-                className="flex items-center justify-between p-3 bg-gray-700/30 rounded-lg"
-              >
-                <div className="flex items-center">
-                  <Bank size={20} className="text-cyan-400 mr-3" />
-                  <div>
-                    <div className="font-medium">{account.bank_name}</div>
-                    <div className="text-sm text-gray-400">
-                      ****{account.account_number.slice(-4)}
-                    </div>
-                  </div>
-                </div>
-                {account.is_primary && (
-                  <div className="text-xs bg-cyan-500/20 text-cyan-300 px-2 py-1 rounded-full">
-                    Primary
-                  </div>
-                )}
-              </div>
             ))}
           </div>
         </div>
 
         {/* Add Bank Modal */}
-        <dialog id="bank-modal" className="modal bg-gray-900/95 backdrop-blur-lg rounded-xl p-6 text-white">
+        <dialog ref={bankModalRef} className="modal bg-gray-900/95 backdrop-blur-lg rounded-xl p-6 text-white">
           <div className="mb-4">
             <h3 className="text-xl font-bold">Add Bank Account</h3>
             <p className="text-gray-400 text-sm">Enter your bank account details</p>
@@ -317,7 +320,7 @@ export default function Withdrawal() {
             <div className="flex justify-end space-x-3">
               <button
                 type="button"
-                onClick={() => document.getElementById('bank-modal')?.close()}
+                onClick={() => bankModalRef.current?.close()}
                 className="px-4 py-2 text-gray-400 hover:text-white transition-colors"
               >
                 Cancel
@@ -334,7 +337,7 @@ export default function Withdrawal() {
         </dialog>
 
         {/* Withdraw Modal */}
-        <dialog id="withdraw-modal" className="modal bg-gray-900/95 backdrop-blur-lg rounded-xl p-6 text-white">
+        <dialog ref={withdrawModalRef} className="modal bg-gray-900/95 backdrop-blur-lg rounded-xl p-6 text-white">
           <div className="mb-4">
             <h3 className="text-xl font-bold">Withdraw Money</h3>
             <p className="text-gray-400 text-sm">Enter amount to withdraw</p>
@@ -355,7 +358,7 @@ export default function Withdrawal() {
             <div className="flex justify-end space-x-3">
               <button
                 type="button"
-                onClick={() => document.getElementById('withdraw-modal')?.close()}
+                onClick={() => withdrawModalRef.current?.close()}
                 className="px-4 py-2 text-gray-400 hover:text-white transition-colors"
               >
                 Cancel

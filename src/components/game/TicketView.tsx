@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { ChevronLeft, ChevronRight, Wand2 } from 'lucide-react';
 import type { Ticket } from '../../types/game';
 

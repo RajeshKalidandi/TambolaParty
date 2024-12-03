@@ -1,9 +1,22 @@
-import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Plus, Wallet, BarChart2, MessageCircle } from 'lucide-react';
+import { toast } from 'react-hot-toast';
 
 export default function QuickActions() {
   const navigate = useNavigate();
+
+  const handleWithdraw = () => {
+    navigate('/payments/withdraw');
+  };
+
+  const handleAnalytics = () => {
+    navigate('/analytics');
+  };
+
+  const handleSupport = () => {
+    // Open support chat or navigate to support page
+    window.open('https://support.tambolaparty.com/chat', '_blank');
+  };
 
   const actions = [
     {
@@ -16,19 +29,19 @@ export default function QuickActions() {
       icon: Wallet,
       label: 'Withdraw Earnings',
       color: 'bg-green-500 hover:bg-green-600',
-      onClick: () => {},
+      onClick: handleWithdraw,
     },
     {
       icon: BarChart2,
       label: 'View Analytics',
       color: 'bg-purple-500 hover:bg-purple-600',
-      onClick: () => {},
+      onClick: handleAnalytics,
     },
     {
       icon: MessageCircle,
       label: 'Support Chat',
       color: 'bg-orange-500 hover:bg-orange-600',
-      onClick: () => {},
+      onClick: handleSupport,
     },
   ];
 

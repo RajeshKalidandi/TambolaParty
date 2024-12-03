@@ -1,11 +1,13 @@
-import { useState } from 'react';
-import { Search, SlidersHorizontal, X } from 'lucide-react';
+import { useState, useEffect, useCallback } from 'react';
+import { Search, SlidersHorizontal, Loader2, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { supabase } from '../../lib/supabase';
+import toast from 'react-hot-toast';
+import type { Room } from '../../types/room';
+import { useAuth } from '../../lib/auth/AuthContext';
 
 interface SearchBarProps {
-  value: string;
-  onChange: (value: string) => void;
-  onFilterChange?: (filters: RoomFilters) => void;
+  onRoomsChange: (rooms: Room[]) => void;
 }
 
 export interface RoomFilters {
@@ -20,141 +22,256 @@ const defaultFilters: RoomFilters = {
   category: 'all',
 };
 
-export default function SearchBar({ value, onChange, onFilterChange }: SearchBarProps) {
+export default function SearchBar({ onRoomsChange }: SearchBarProps) {
+  const [searchQuery, setSearchQuery] = useState('');
   const [showFilters, setShowFilters] = useState(false);
   const [filters, setFilters] = useState<RoomFilters>(defaultFilters);
+  const [loading, setLoading] = useState(false);
+  const { user } = useAuth();
+  const [debouncedQuery, setDebouncedQuery] = useState('');
+
+  // Handle search query debouncing
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedQuery(searchQuery);
+    }, 300);
+
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
+  const searchRooms = useCallback(async () => {
+    if (!onRoomsChange || !user?.id) return;
+    setLoading(true);
+
+    try {
+      let query = supabase
+        .from('rooms')
+        .select('*')
+        .order('start_time', { ascending: true });
+
+      // Apply text search
+      if (debouncedQuery) {
+        query = query.ilike('title', `%${debouncedQuery}%`);
+      }
+
+      // Apply category filter
+      if (filters.category !== 'all') {
+        query = query.eq('category', filters.category);
+      }
+
+      // Apply price range filter
+      query = query
+        .gte('ticket_price', filters.priceRange[0])
+        .lte('ticket_price', filters.priceRange[1]);
+
+      // Apply start time filter
+      if (filters.startTime !== 'any') {
+        const now = new Date();
+        let maxTime = new Date();
+        
+        switch (filters.startTime) {
+          case '15min':
+            maxTime.setMinutes(now.getMinutes() + 15);
+            break;
+          case '30min':
+            maxTime.setMinutes(now.getMinutes() + 30);
+            break;
+          case '1hour':
+            maxTime.setHours(now.getHours() + 1);
+            break;
+        }
+
+        query = query
+          .gte('start_time', now.toISOString())
+          .lte('start_time', maxTime.toISOString());
+      }
+
+      const { data, error } = await query;
+
+      if (error) throw error;
+      onRoomsChange(data || []);
+    } catch (error) {
+      console.error('Error searching rooms:', error);
+      toast.error('Failed to search rooms');
+      onRoomsChange([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [debouncedQuery, filters, onRoomsChange, user?.id]);
+
+  // Effect for searching when filters or debounced query changes
+  useEffect(() => {
+    if (!user?.id) {
+      onRoomsChange([]);
+      return;
+    }
+
+    void searchRooms();
+  }, [debouncedQuery, filters, user?.id, searchRooms, onRoomsChange]);
+
+  // Effect for real-time updates
+  useEffect(() => {
+    if (!user?.id) return;
+
+    const channel = supabase
+      .channel('room-changes')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'rooms',
+        },
+        () => {
+          void searchRooms();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [user?.id, searchRooms]);
 
   const handleFilterChange = (newFilters: Partial<RoomFilters>) => {
-    const updatedFilters = { ...filters, ...newFilters };
-    setFilters(updatedFilters);
-    onFilterChange?.(updatedFilters);
+    setFilters(prev => ({ ...prev, ...newFilters }));
   };
 
-  const categories = [
-    { id: 'all', label: 'All Games' },
-    { id: 'quick', label: 'Quick Games' },
-    { id: 'tournament', label: 'Tournaments' },
-    { id: 'casual', label: 'Casual' },
-  ];
-
-  const timeOptions = [
-    { id: 'any', label: 'Any Time' },
-    { id: '15min', label: '< 15 mins' },
-    { id: '30min', label: '< 30 mins' },
-    { id: '1hour', label: '< 1 hour' },
-  ];
-
   return (
-    <div className="sticky top-0 z-20 bg-gray-900/95 backdrop-blur-lg border-b border-gray-800">
-      <div className="max-w-lg mx-auto px-4 py-3">
-        {/* Search Input */}
-        <div className="relative flex items-center gap-2">
-          <div className="relative flex-1">
-            <input
-              type="text"
-              value={value}
-              onChange={(e) => onChange(e.target.value)}
-              placeholder="Search rooms..."
-              className="w-full bg-gray-800 text-gray-100 pl-10 pr-4 py-2.5 rounded-lg 
-                       border border-gray-700 focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500
-                       transition-all duration-200"
-            />
-            <Search className="absolute left-3 top-3 text-gray-400 w-5 h-5" />
-            {value && (
-              <button
-                onClick={() => onChange('')}
-                className="absolute right-3 top-3 text-gray-400 hover:text-gray-300"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            )}
-          </div>
-          <button 
-            onClick={() => setShowFilters(!showFilters)}
-            className={`p-2.5 bg-gray-800 rounded-lg border transition-colors ${
-              showFilters ? 'border-cyan-500 text-cyan-500' : 'border-gray-700 text-gray-400 hover:border-cyan-500'
-            }`}
-          >
-            <SlidersHorizontal className="w-5 h-5" />
-          </button>
+    <div className="relative">
+      <div className="flex items-center gap-2">
+        <div className="relative flex-1">
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Search games..."
+            className="w-full bg-gray-800 text-gray-300 rounded-lg pl-10 pr-4 py-2 focus:outline-none focus:ring-2 focus:ring-cyan-500"
+          />
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-500" />
+          {loading && (
+            <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-cyan-500 animate-spin" />
+          )}
         </div>
+        <button
+          onClick={() => setShowFilters(!showFilters)}
+          className={`p-2 rounded-lg transition-colors ${
+            showFilters ? 'bg-cyan-600 text-white' : 'bg-gray-800 text-gray-400 hover:text-gray-300'
+          }`}
+        >
+          <SlidersHorizontal className="w-5 h-5" />
+        </button>
+      </div>
 
-        {/* Filter Panel */}
-        <AnimatePresence>
-          {showFilters && (
-            <motion.div
-              initial={{ height: 0, opacity: 0 }}
-              animate={{ height: 'auto', opacity: 1 }}
-              exit={{ height: 0, opacity: 0 }}
-              transition={{ duration: 0.2 }}
-              className="overflow-hidden"
-            >
-              <div className="pt-4 space-y-4">
-                {/* Categories */}
-                <div className="space-y-2">
-                  <h3 className="text-sm font-medium text-gray-300">Category</h3>
-                  <div className="flex flex-wrap gap-2">
-                    {categories.map(({ id, label }) => (
-                      <button
-                        key={id}
-                        onClick={() => handleFilterChange({ category: id as RoomFilters['category'] })}
-                        className={`px-3 py-1.5 rounded-full text-sm transition-colors ${
-                          filters.category === id
-                            ? 'bg-cyan-500 text-white'
-                            : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
-                        }`}
-                      >
-                        {label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Start Time */}
-                <div className="space-y-2">
-                  <h3 className="text-sm font-medium text-gray-300">Start Time</h3>
-                  <div className="flex flex-wrap gap-2">
-                    {timeOptions.map(({ id, label }) => (
-                      <button
-                        key={id}
-                        onClick={() => handleFilterChange({ startTime: id as RoomFilters['startTime'] })}
-                        className={`px-3 py-1.5 rounded-full text-sm transition-colors ${
-                          filters.startTime === id
-                            ? 'bg-cyan-500 text-white'
-                            : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
-                        }`}
-                      >
-                        {label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Price Range */}
-                <div className="space-y-2">
-                  <div className="flex justify-between items-center">
-                    <h3 className="text-sm font-medium text-gray-300">Ticket Price</h3>
-                    <span className="text-sm text-gray-400">
-                      ₹{filters.priceRange[0]} - ₹{filters.priceRange[1]}
-                    </span>
-                  </div>
+      <AnimatePresence>
+        {showFilters && (
+          <motion.div
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            className="absolute top-full left-0 right-0 mt-2 p-4 bg-gray-800 rounded-lg shadow-lg border border-gray-700 z-10"
+          >
+            <div className="space-y-4">
+              {/* Price Range Filter */}
+              <div>
+                <label className="text-sm font-medium text-gray-300">Entry Fee Range</label>
+                <div className="mt-2 flex items-center gap-4">
                   <input
                     type="range"
                     min="0"
                     max="1000"
-                    step="50"
-                    value={filters.priceRange[1]}
-                    onChange={(e) => handleFilterChange({ 
-                      priceRange: [0, parseInt(e.target.value)] 
-                    })}
-                    className="w-full accent-cyan-500"
+                    step="10"
+                    value={filters.priceRange[0]}
+                    onChange={(e) =>
+                      handleFilterChange({
+                        priceRange: [Number(e.target.value), filters.priceRange[1]],
+                      })
+                    }
+                    className="flex-1"
                   />
+                  <span className="text-sm text-gray-400">₹{filters.priceRange[0]}</span>
+                </div>
+                <div className="mt-2 flex items-center gap-4">
+                  <input
+                    type="range"
+                    min="0"
+                    max="1000"
+                    step="10"
+                    value={filters.priceRange[1]}
+                    onChange={(e) =>
+                      handleFilterChange({
+                        priceRange: [filters.priceRange[0], Number(e.target.value)],
+                      })
+                    }
+                    className="flex-1"
+                  />
+                  <span className="text-sm text-gray-400">₹{filters.priceRange[1]}</span>
                 </div>
               </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </div>
+
+              {/* Start Time Filter */}
+              <div>
+                <label className="text-sm font-medium text-gray-300">Start Time</label>
+                <div className="mt-2 grid grid-cols-4 gap-2">
+                  {(['any', '15min', '30min', '1hour'] as const).map((time) => (
+                    <button
+                      key={time}
+                      onClick={() => handleFilterChange({ startTime: time })}
+                      className={`px-3 py-1 rounded text-sm ${
+                        filters.startTime === time
+                          ? 'bg-cyan-600 text-white'
+                          : 'bg-gray-700 text-gray-400 hover:bg-gray-600'
+                      }`}
+                    >
+                      {time === 'any'
+                        ? 'Any'
+                        : time === '15min'
+                        ? '15 mins'
+                        : time === '30min'
+                        ? '30 mins'
+                        : '1 hour'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Category Filter */}
+              <div>
+                <label className="text-sm font-medium text-gray-300">Category</label>
+                <div className="mt-2 grid grid-cols-4 gap-2">
+                  {(['all', 'quick', 'tournament', 'casual'] as const).map((category) => (
+                    <button
+                      key={category}
+                      onClick={() => handleFilterChange({ category })}
+                      className={`px-3 py-1 rounded text-sm capitalize ${
+                        filters.category === category
+                          ? 'bg-cyan-600 text-white'
+                          : 'bg-gray-700 text-gray-400 hover:bg-gray-600'
+                      }`}
+                    >
+                      {category}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Reset Filters */}
+              <div className="flex justify-end">
+                <button
+                  onClick={() => {
+                    setFilters(defaultFilters);
+                    setShowFilters(false);
+                  }}
+                  className="flex items-center gap-1 text-sm text-gray-400 hover:text-gray-300"
+                >
+                  <X className="w-4 h-4" />
+                  Reset Filters
+                </button>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

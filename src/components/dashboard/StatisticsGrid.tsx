@@ -1,12 +1,54 @@
-import React from 'react';
+import { useEffect, useState } from 'react';
 import { Calendar, Users, TrendingUp, IndianRupee } from 'lucide-react';
 import type { HostStats } from '../../types/dashboard';
+import { supabase } from '../../lib/supabase';
 
 interface StatisticsGridProps {
-  stats: HostStats;
+  initialStats: HostStats;
 }
 
-export default function StatisticsGrid({ stats }: StatisticsGridProps) {
+export default function StatisticsGrid({ initialStats }: StatisticsGridProps) {
+  const [stats, setStats] = useState<HostStats>(initialStats);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    const subscription = supabase
+      .channel('host_stats')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'host_stats'
+        },
+        async () => {
+          await fetchStats();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, []);
+
+  const fetchStats = async () => {
+    setLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('host_stats')
+        .select('*')
+        .single();
+
+      if (error) throw error;
+      setStats(data);
+    } catch (error) {
+      console.error('Error fetching stats:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const cards = [
     {
       icon: Calendar,
@@ -48,7 +90,11 @@ export default function StatisticsGrid({ stats }: StatisticsGridProps) {
             </div>
             <div>
               <h3 className="text-gray-500 text-sm">{card.label}</h3>
-              <p className="text-2xl font-bold text-gray-900">{card.value}</p>
+              {loading ? (
+                <div className="h-8 w-24 bg-gray-200 animate-pulse rounded"></div>
+              ) : (
+                <p className="text-2xl font-bold text-gray-900">{card.value}</p>
+              )}
             </div>
           </div>
         </div>

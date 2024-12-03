@@ -19,48 +19,31 @@ export interface Database {
             middleLine: number;
             bottomLine: number;
           };
+          payment_details: {
+            upiId: string;
+            qrImage: string;
+          };
           created_at: string;
         };
         Insert: Omit<Database['public']['Tables']['rooms']['Row'], 'id' | 'created_at'>;
         Update: Partial<Database['public']['Tables']['rooms']['Insert']>;
       };
-      players: {
-        Row: {
-          id: string;
-          username: string;
-          avatar_url: string | null;
-          rating: number;
-          wallet_balance: number;
-          created_at: string;
-        };
-        Insert: Omit<Database['public']['Tables']['players']['Row'], 'id' | 'created_at'>;
-        Update: Partial<Database['public']['Tables']['players']['Insert']>;
-      };
-      tickets: {
+      payment_verifications: {
         Row: {
           id: string;
           room_id: string;
           player_id: string;
-          numbers: number[][];
-          claims: {
-            full_house: boolean;
-            top_line: boolean;
-            middle_line: boolean;
-            bottom_line: boolean;
-          };
-          created_at: string;
+          player_name: string;
+          amount: number;
+          screenshot: string;
+          transaction_id?: string;
+          status: 'PENDING' | 'VERIFIED' | 'REJECTED';
+          timestamp: string;
+          verified_at?: string;
+          host_note?: string;
         };
-        Insert: Omit<Database['public']['Tables']['tickets']['Row'], 'id' | 'created_at'>;
-        Update: Partial<Database['public']['Tables']['tickets']['Insert']>;
-      };
-      game_numbers: {
-        Row: {
-          room_id: string;
-          number: number;
-          called_at: string;
-        };
-        Insert: Omit<Database['public']['Tables']['game_numbers']['Row'], 'called_at'>;
-        Update: Partial<Database['public']['Tables']['game_numbers']['Insert']>;
+        Insert: Omit<Database['public']['Tables']['payment_verifications']['Row'], 'id' | 'timestamp'>;
+        Update: Partial<Database['public']['Tables']['payment_verifications']['Row']>;
       };
     };
   };

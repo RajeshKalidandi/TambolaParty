@@ -1,22 +1,110 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { supabase } from '../../lib/supabase';
+import toast from 'react-hot-toast';
 
 interface NumberDisplayProps {
-  currentNumber: number | null;
-  lastNumbers: number[];
+  gameId: string;
+  isHost?: boolean;
 }
 
-const NumberDisplay = ({ currentNumber, lastNumbers }: NumberDisplayProps) => {
+export default function NumberDisplay({ gameId, isHost }: NumberDisplayProps) {
+  const [currentNumber, setCurrentNumber] = useState<number | null>(null);
+  const [lastNumbers, setLastNumbers] = useState<number[]>([]);
+  const [loading, setLoading] = useState(true);
+
   useEffect(() => {
-    if (currentNumber) {
-      // Play sound when new number is called
-      const audio = new Audio('/number-called.mp3');
-      audio.play().catch(() => {
-        // Handle browsers that block autoplay
-        console.log('Audio autoplay blocked');
-      });
+    loadGameState();
+    
+    // Subscribe to game updates
+    const channel = supabase
+      .channel(`game-numbers-${gameId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'games',
+          filter: `id=eq.${gameId}`,
+        },
+        (payload) => {
+          const { current_number, called_numbers } = payload.new;
+          setCurrentNumber(current_number);
+          setLastNumbers(called_numbers || []);
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [gameId]);
+
+  const loadGameState = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('games')
+        .select('current_number, called_numbers')
+        .eq('id', gameId)
+        .single();
+
+      if (error) throw error;
+      
+      setCurrentNumber(data.current_number);
+      setLastNumbers(data.called_numbers || []);
+      setLoading(false);
+    } catch (error) {
+      console.error('Error loading game state:', error);
+      toast.error('Failed to load game state');
+      setLoading(false);
     }
-  }, [currentNumber]);
+  };
+
+  const callNumber = async () => {
+    if (!isHost) return;
+
+    try {
+      // Get all numbers from 1 to 90
+      const allNumbers = Array.from({ length: 90 }, (_, i) => i + 1);
+      // Filter out already called numbers
+      const availableNumbers = allNumbers.filter(n => !lastNumbers.includes(n));
+      
+      if (availableNumbers.length === 0) {
+        toast.error('All numbers have been called!');
+        return;
+      }
+
+      // Pick a random number
+      const randomIndex = Math.floor(Math.random() * availableNumbers.length);
+      const newNumber = availableNumbers[randomIndex];
+
+      const { error } = await supabase
+        .from('games')
+        .update({
+          current_number: newNumber,
+          called_numbers: [...lastNumbers, newNumber]
+        })
+        .eq('id', gameId);
+
+      if (error) throw error;
+
+      // Play sound
+      const audio = new Audio('/number-called.mp3');
+      audio.play().catch(console.error);
+    } catch (error) {
+      console.error('Error calling number:', error);
+      toast.error('Failed to call number');
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="bg-gray-900 p-4 rounded-lg shadow-lg text-center animate-pulse">
+        <div className="h-24 bg-gray-800 rounded-lg mb-4"></div>
+        <div className="h-12 bg-gray-800 rounded-lg"></div>
+      </div>
+    );
+  }
 
   return (
     <div className="bg-gray-900 p-4 rounded-lg shadow-lg text-center">
@@ -30,32 +118,36 @@ const NumberDisplay = ({ currentNumber, lastNumbers }: NumberDisplayProps) => {
             exit={{ scale: 0.5, opacity: 0 }}
             className="relative mb-6"
           >
-            <div className="absolute inset-0 bg-cyan-500/20 blur-xl rounded-full animate-pulse" />
-            <div className="relative bg-gray-800 rounded-2xl p-8 text-center border border-cyan-500/30">
-              <span className="text-6xl font-bold bg-gradient-to-r from-cyan-400 to-blue-500 text-transparent bg-clip-text">
-                {currentNumber}
-              </span>
-            </div>
+            <span className="text-6xl font-bold text-white">{currentNumber}</span>
           </motion.div>
         )}
       </AnimatePresence>
 
-      {/* Last 5 Numbers */}
-      <div className="flex justify-center gap-2">
-        {lastNumbers.slice(0, 5).map((number, index) => (
+      {/* Last Called Numbers */}
+      <div className="flex flex-wrap gap-2 justify-center">
+        {lastNumbers.slice(-10).reverse().map((number, index) => (
           <motion.div
             key={`${number}-${index}`}
-            initial={{ y: 20, opacity: 0 }}
-            animate={{ y: 0, opacity: 0.6 }}
-            className="w-10 h-10 flex items-center justify-center bg-gray-800 rounded-lg text-gray-400 text-sm border border-gray-700"
-            style={{ animationDelay: `${index * 0.1}s` }}
+            initial={{ scale: 0.8, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            className={`w-10 h-10 rounded-full flex items-center justify-center text-sm font-medium
+              ${number === currentNumber ? 'bg-cyan-600 text-white' : 'bg-gray-800 text-gray-300'}`}
           >
             {number}
           </motion.div>
         ))}
       </div>
+
+      {/* Call Number Button (Host Only) */}
+      {isHost && (
+        <motion.button
+          whileTap={{ scale: 0.95 }}
+          onClick={callNumber}
+          className="mt-6 px-4 py-2 bg-cyan-600 text-white rounded-lg hover:bg-cyan-500 transition-colors"
+        >
+          Call Next Number
+        </motion.button>
+      )}
     </div>
   );
-};
-
-export default NumberDisplay;
+}
