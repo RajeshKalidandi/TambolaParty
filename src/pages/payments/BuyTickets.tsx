@@ -1,259 +1,332 @@
-import { useState } from 'react';
-import { motion } from 'framer-motion';
-import { Ticket, ArrowLeft, Info, Check } from 'lucide-react';
-import { Link } from 'react-router-dom';
-import { toast } from 'react-hot-toast';
-import { useAuth } from '../../lib/auth/AuthContext';
+import React, { useEffect, useState } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
+import { AlertCircle, Check, Copy, Loader } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
+import toast from 'react-hot-toast';
+import { useAuth } from '../../lib/auth/AuthContext';
+import { motion } from 'framer-motion';
 
-interface TicketPackage {
-  id: string;
-  name: string;
-  price: number;
-  tickets: number;
-  benefits: string[];
-  popular?: boolean;
+interface PaymentDetails {
+  upiId: string;
+  qrImage: string;
 }
 
-const ticketPackages: TicketPackage[] = [
-  {
-    id: 'basic',
-    name: 'Starter Pack',
-    price: 99,
-    tickets: 5,
-    benefits: [
-      'Valid for all regular games',
-      '24-hour validity',
-      'Basic support'
-    ]
-  },
-  {
-    id: 'pro',
-    name: 'Pro Pack',
-    price: 199,
-    tickets: 12,
-    tickets_bonus: 3,
-    benefits: [
-      'Valid for all games including tournaments',
-      '48-hour validity',
-      'Priority support',
-      '3 bonus tickets'
-    ],
-    popular: true
-  },
-  {
-    id: 'premium',
-    name: 'Premium Pack',
-    price: 499,
-    tickets: 30,
-    tickets_bonus: 10,
-    benefits: [
-      'Valid for all games including special events',
-      '7-day validity',
-      'Premium support',
-      '10 bonus tickets',
-      'Exclusive access to premium rooms'
-    ]
-  }
-];
+interface RoomDetails {
+  id: string;
+  name: string;
+  host_id: string;
+  ticket_price: number;
+  payment_details: PaymentDetails;
+  max_tickets_per_user: number;
+}
+
+interface PaymentVerificationRequest {
+  id: string;
+  room_id: string;
+  user_id: string;
+  transaction_id: string;
+  amount: number;
+  ticket_count: number;
+  status: 'pending' | 'approved' | 'rejected';
+  created_at: string;
+}
 
 export default function BuyTickets() {
+  const { roomId } = useParams();
+  const navigate = useNavigate();
   const { user } = useAuth();
-  const [selectedPackage, setSelectedPackage] = useState<TicketPackage | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [activeTickets, setActiveTickets] = useState<number>(0);
+  
+  const [room, setRoom] = useState<RoomDetails | null>(null);
+  const [transactionId, setTransactionId] = useState('');
+  const [ticketCount, setTicketCount] = useState(1);
+  const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+  const [verificationRequest, setVerificationRequest] = useState<PaymentVerificationRequest | null>(null);
 
-  const loadScript = (src: string) => {
-    return new Promise((resolve) => {
-      const script = document.createElement('script');
-      script.src = src;
-      script.onload = () => resolve(true);
-      script.onerror = () => resolve(false);
-      document.body.appendChild(script);
-    });
-  };
+  useEffect(() => {
+    if (!roomId) {
+      toast.error('Room ID is required');
+      navigate('/lobby');
+      return;
+    }
+    void loadRoomDetails();
+  }, [roomId]);
 
-  const handlePurchase = async (pkg: TicketPackage) => {
+  const loadRoomDetails = async () => {
     try {
       setLoading(true);
-      
-      // Load Razorpay script
-      const res = await loadScript('https://checkout.razorpay.com/v1/checkout.js');
-      if (!res) {
-        toast.error('Failed to load payment gateway');
-        return;
-      }
-
-      // Create order in your backend
-      const { data: order, error: orderError } = await supabase
-        .from('orders')
-        .insert([
-          {
-            user_id: user?.id,
-            package_id: pkg.id,
-            amount: pkg.price,
-            status: 'pending'
-          }
-        ])
-        .select()
+      const { data, error } = await supabase
+        .from('rooms')
+        .select('id, name, host_id, ticket_price, payment_details, max_tickets_per_user')
+        .eq('id', roomId)
         .single();
 
-      if (orderError) throw orderError;
+      if (error) throw error;
+      if (!data) throw new Error('Room not found');
 
-      // Initialize Razorpay
-      const options = {
-        key: import.meta.env.VITE_RAZORPAY_KEY_ID,
-        amount: pkg.price * 100, // amount in paisa
-        currency: 'INR',
-        name: 'Tambola Party',
-        description: `Purchase ${pkg.name}`,
-        order_id: order.razorpay_order_id,
-        handler: async (response: any) => {
-          try {
-            // Verify payment with your backend
-            const { error: verifyError } = await supabase
-              .from('orders')
-              .update({
-                status: 'completed',
-                payment_id: response.razorpay_payment_id
-              })
-              .eq('id', order.id);
+      setRoom(data as RoomDetails);
 
-            if (verifyError) throw verifyError;
+      // Check for existing payment verification request
+      const { data: verificationData } = await supabase
+        .from('payment_verifications')
+        .select('*')
+        .eq('room_id', roomId)
+        .eq('user_id', user?.id)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .single();
 
-            // Add tickets to user's account
-            const { error: ticketError } = await supabase.rpc('add_tickets', {
-              user_id: user?.id,
-              ticket_count: pkg.tickets + (pkg.tickets_bonus || 0)
-            });
-
-            if (ticketError) throw ticketError;
-
-            toast.success('Tickets purchased successfully!');
-            // Refresh active tickets count
-            fetchActiveTickets();
-          } catch (err) {
-            console.error('Payment verification failed:', err);
-            toast.error('Failed to verify payment');
-          }
-        },
-        prefill: {
-          email: user?.email
-        },
-        theme: {
-          color: '#0891b2' // Tailwind cyan-600
-        }
-      };
-
-      const razorpay = new (window as any).Razorpay(options);
-      razorpay.open();
-    } catch (err) {
-      console.error('Purchase failed:', err);
-      toast.error('Failed to initiate purchase');
+      if (verificationData) {
+        setVerificationRequest(verificationData as PaymentVerificationRequest);
+      }
+    } catch (error) {
+      console.error('Error loading room details:', error);
+      toast.error('Failed to load room details');
+      navigate('/lobby');
     } finally {
       setLoading(false);
     }
   };
 
-  const fetchActiveTickets = async () => {
-    if (!user) return;
-    
-    const { data, error } = await supabase
-      .from('player_tickets')
-      .select('tickets_available')
-      .eq('user_id', user.id)
-      .single();
-
-    if (!error && data) {
-      setActiveTickets(data.tickets_available);
+  const handleCopy = async (text: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      toast.success('Copied to clipboard!');
+    } catch (error) {
+      toast.error('Failed to copy to clipboard');
     }
   };
 
+  const handleSubmitPayment = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!room || !user) return;
+
+    try {
+      setSubmitting(true);
+
+      // Validate transaction ID format (you can adjust this based on your requirements)
+      if (transactionId.length < 8) {
+        toast.error('Please enter a valid transaction ID');
+        return;
+      }
+
+      // Calculate total amount
+      const totalAmount = room.ticket_price * ticketCount;
+
+      // Create payment verification request
+      const { data: verificationData, error: verificationError } = await supabase
+        .from('payment_verifications')
+        .insert({
+          room_id: room.id,
+          user_id: user.id,
+          transaction_id: transactionId,
+          amount: totalAmount,
+          ticket_count: ticketCount,
+          status: 'pending'
+        })
+        .select()
+        .single();
+
+      if (verificationError) throw verificationError;
+
+      setVerificationRequest(verificationData as PaymentVerificationRequest);
+      toast.success('Payment verification request submitted!');
+
+      // Subscribe to changes in payment verification status
+      const verificationChannel = supabase
+        .channel(`payment_verification:${verificationData.id}`)
+        .on(
+          'postgres_changes',
+          {
+            event: 'UPDATE',
+            schema: 'public',
+            table: 'payment_verifications',
+            filter: `id=eq.${verificationData.id}`
+          },
+          (payload) => {
+            const updatedVerification = payload.new as PaymentVerificationRequest;
+            setVerificationRequest(updatedVerification);
+
+            if (updatedVerification.status === 'approved') {
+              toast.success('Payment verified! Redirecting to game...');
+              setTimeout(() => {
+                navigate(`/game/${room.id}`);
+              }, 2000);
+            } else if (updatedVerification.status === 'rejected') {
+              toast.error('Payment verification failed. Please try again or contact support.');
+            }
+          }
+        )
+        .subscribe();
+
+      return () => {
+        verificationChannel.unsubscribe();
+      };
+    } catch (error) {
+      console.error('Error submitting payment:', error);
+      toast.error('Failed to submit payment verification');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <Loader className="w-8 h-8 animate-spin text-indigo-600" />
+      </div>
+    );
+  }
+
+  if (!room) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center">
+          <AlertCircle className="w-12 h-12 mx-auto text-red-500" />
+          <h2 className="mt-2 text-lg font-medium">Room not found</h2>
+          <p className="mt-1 text-sm text-gray-500">Please check the room ID and try again</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="min-h-screen bg-gray-900 text-white p-4 pb-20">
-      <div className="max-w-lg mx-auto">
-        {/* Header */}
-        <div className="flex items-center justify-between mb-6">
-          <div className="flex items-center">
-            <Link to="/lobby" className="text-gray-400 hover:text-white mr-4">
-              <ArrowLeft size={24} />
-            </Link>
-            <h1 className="text-2xl font-bold">Buy Tickets</h1>
-          </div>
-          <div className="flex items-center bg-cyan-500/20 px-3 py-1 rounded-full">
-            <Ticket size={16} className="text-cyan-400 mr-2" />
-            <span className="text-cyan-100">{activeTickets} tickets</span>
-          </div>
-        </div>
-
-        {/* Packages Grid */}
-        <div className="grid gap-4 mb-8">
-          {ticketPackages.map((pkg) => (
-            <motion.div
-              key={pkg.id}
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              className={`relative bg-gray-800/50 backdrop-blur-lg rounded-xl p-6 border-2 transition-colors ${
-                selectedPackage?.id === pkg.id
-                  ? 'border-cyan-500'
-                  : 'border-gray-700 hover:border-gray-600'
-              }`}
-            >
-              {pkg.popular && (
-                <div className="absolute -top-3 -right-2">
-                  <div className="bg-gradient-to-r from-orange-500 to-pink-500 text-white text-xs font-bold px-3 py-1 rounded-full">
-                    Popular
-                  </div>
-                </div>
-              )}
-
-              <div className="flex justify-between items-start mb-4">
-                <div>
-                  <h3 className="text-lg font-bold mb-1">{pkg.name}</h3>
-                  <div className="flex items-center text-2xl font-bold text-cyan-400">
-                    ₹{pkg.price}
-                  </div>
-                </div>
-                <div className="text-right">
-                  <div className="text-lg font-bold text-cyan-400">{pkg.tickets}</div>
-                  <div className="text-sm text-gray-400">tickets</div>
-                  {pkg.tickets_bonus && (
-                    <div className="text-xs text-orange-400">+{pkg.tickets_bonus} bonus</div>
-                  )}
-                </div>
-              </div>
-
-              <div className="space-y-2 mb-4">
-                {pkg.benefits.map((benefit, index) => (
-                  <div key={index} className="flex items-start text-sm text-gray-300">
-                    <Check size={16} className="text-green-400 mr-2 mt-1 flex-shrink-0" />
-                    <span>{benefit}</span>
-                  </div>
-                ))}
-              </div>
-
-              <button
-                onClick={() => handlePurchase(pkg)}
-                disabled={loading}
-                className="w-full bg-gradient-to-r from-cyan-500 to-cyan-600 hover:from-cyan-600 hover:to-cyan-700 text-white font-medium py-2 px-4 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {loading ? 'Processing...' : 'Buy Now'}
-              </button>
-            </motion.div>
-          ))}
-        </div>
-
-        {/* Info Section */}
+    <div className="min-h-screen bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
+      <div className="max-w-md mx-auto">
         <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          className="bg-gray-800/30 rounded-lg p-4 flex items-start"
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="bg-white rounded-lg shadow-lg overflow-hidden"
         >
-          <Info size={20} className="text-gray-400 mr-3 flex-shrink-0 mt-1" />
-          <div className="text-sm text-gray-400">
-            Tickets are valid for their specified duration from the time of purchase.
-            Unused tickets will expire after their validity period.
-            For any issues with ticket purchases, please contact support.
+          <div className="px-6 py-8">
+            <h2 className="text-2xl font-bold text-center text-gray-900 mb-8">
+              Buy Tickets for {room.name}
+            </h2>
+
+            {verificationRequest ? (
+              <div className="space-y-4">
+                <div className={`p-4 rounded-lg ${
+                  verificationRequest.status === 'pending'
+                    ? 'bg-yellow-50'
+                    : verificationRequest.status === 'approved'
+                    ? 'bg-green-50'
+                    : 'bg-red-50'
+                }`}>
+                  <div className="flex items-center">
+                    {verificationRequest.status === 'pending' ? (
+                      <Loader className="w-5 h-5 text-yellow-500 animate-spin" />
+                    ) : verificationRequest.status === 'approved' ? (
+                      <Check className="w-5 h-5 text-green-500" />
+                    ) : (
+                      <AlertCircle className="w-5 h-5 text-red-500" />
+                    )}
+                    <p className="ml-2 text-sm font-medium">
+                      {verificationRequest.status === 'pending'
+                        ? 'Payment verification in progress...'
+                        : verificationRequest.status === 'approved'
+                        ? 'Payment verified!'
+                        : 'Payment verification failed'}
+                    </p>
+                  </div>
+                  <p className="mt-2 text-sm text-gray-600">
+                    Transaction ID: {verificationRequest.transaction_id}
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <form onSubmit={handleSubmitPayment} className="space-y-6">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">
+                    Payment QR Code
+                  </label>
+                  <div className="mt-1 flex justify-center">
+                    <div className="relative group">
+                      <img
+                        src={room.payment_details.qrImage}
+                        alt="Payment QR Code"
+                        className="w-48 h-48 object-contain"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">
+                    UPI ID
+                  </label>
+                  <div className="mt-1 flex rounded-md shadow-sm">
+                    <input
+                      type="text"
+                      value={room.payment_details.upiId}
+                      readOnly
+                      className="flex-1 min-w-0 block w-full px-3 py-2 rounded-md border border-gray-300 bg-gray-50 text-sm"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => handleCopy(room.payment_details.upiId)}
+                      className="ml-3 inline-flex items-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+                    >
+                      <Copy className="h-4 w-4" />
+                    </button>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">
+                    Number of Tickets
+                  </label>
+                  <select
+                    value={ticketCount}
+                    onChange={(e) => setTicketCount(Number(e.target.value))}
+                    className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md"
+                  >
+                    {[...Array(room.max_tickets_per_user)].map((_, i) => (
+                      <option key={i + 1} value={i + 1}>
+                        {i + 1} {i === 0 ? 'Ticket' : 'Tickets'} - ₹{room.ticket_price * (i + 1)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">
+                    Transaction ID
+                  </label>
+                  <input
+                    type="text"
+                    value={transactionId}
+                    onChange={(e) => setTransactionId(e.target.value)}
+                    placeholder="Enter your UPI transaction ID"
+                    className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                    required
+                  />
+                </div>
+
+                <div className="bg-gray-50 px-4 py-3 rounded-lg">
+                  <p className="text-sm text-gray-600">
+                    Total Amount: <span className="font-bold">₹{room.ticket_price * ticketCount}</span>
+                  </p>
+                  <p className="mt-1 text-xs text-gray-500">
+                    Please complete the payment and enter the transaction ID above
+                  </p>
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={submitting}
+                  className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {submitting ? (
+                    <>
+                      <Loader className="w-4 h-4 animate-spin mr-2" />
+                      Submitting...
+                    </>
+                  ) : (
+                    'Submit Payment for Verification'
+                  )}
+                </button>
+              </form>
+            )}
           </div>
         </motion.div>
       </div>

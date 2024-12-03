@@ -3,7 +3,6 @@ import { Upload } from 'lucide-react';
 import type { RoomFormData } from '../../types/room-creation';
 import { supabase } from '../../lib/supabase';
 import toast from 'react-hot-toast';
-import { PaymentDetails } from '../../types/payment';
 
 interface PaymentSetupProps {
   data: RoomFormData;
@@ -32,8 +31,8 @@ export default function PaymentSetup({ data, onChange }: PaymentSetupProps) {
       }
 
       // Get current user
-      const { data: userData } = await supabase.auth.getUser();
-      if (!userData.user) {
+      const { data: userData, error: userError } = await supabase.auth.getUser();
+      if (userError || !userData.user) {
         throw new Error('Not authenticated');
       }
 
@@ -44,7 +43,7 @@ export default function PaymentSetup({ data, onChange }: PaymentSetupProps) {
       const fileName = `${userData.user.id}/qr_${timestamp}_${randomString}.${fileExt}`;
 
       // Upload to storage
-      const { error: uploadError } = await supabase.storage
+      const { error: uploadError, data: uploadData } = await supabase.storage
         .from('payment-qr-codes')
         .upload(fileName, file, {
           contentType: `image/${fileExt}`,
@@ -63,26 +62,14 @@ export default function PaymentSetup({ data, onChange }: PaymentSetupProps) {
         throw new Error('Failed to get public URL');
       }
 
-      // Save to database
-      const { error: dbError } = await supabase
-        .from('payment_qr_codes')
-        .insert({
-          user_id: userData.user.id,
-          qr_image_url: urlData.publicUrl,
-          upi_id: data.paymentDetails?.upiId || ''
-        });
+      // Update form data
+      const updatedPaymentDetails = {
+        ...data.paymentDetails,
+        qrImage: urlData.publicUrl,
+        isValid: Boolean(data.paymentDetails?.upiId?.match(/^[a-zA-Z0-9._-]+@[a-zA-Z0-9]+$/))
+      };
 
-      if (dbError) throw dbError;
-
-      // Update form
-      onChange({
-        paymentDetails: {
-          ...data.paymentDetails,
-          qrImage: urlData.publicUrl,
-          isValid: Boolean(data.paymentDetails?.upiId?.match(/^[a-zA-Z0-9._-]+@[a-zA-Z0-9]+$/))
-        }
-      });
-
+      onChange({ paymentDetails: updatedPaymentDetails });
       toast.success('QR code uploaded successfully');
     } catch (error) {
       console.error('Error:', error);
@@ -93,7 +80,7 @@ export default function PaymentSetup({ data, onChange }: PaymentSetupProps) {
   };
 
   const handleUPIChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const upiId = e.target.value;
+    const upiId = e.target.value.trim();
     const isValid = Boolean(upiId.match(/^[a-zA-Z0-9._-]+@[a-zA-Z0-9]+$/));
     
     onChange({
@@ -106,54 +93,76 @@ export default function PaymentSetup({ data, onChange }: PaymentSetupProps) {
   };
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-6">
       <div>
         <label htmlFor="upiId" className="block text-sm font-medium text-gray-700">
           UPI ID
         </label>
-        <input
-          type="text"
-          id="upiId"
-          value={data.paymentDetails?.upiId || ''}
-          onChange={handleUPIChange}
-          placeholder="example@upi"
-          className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
-        />
+        <div className="mt-1">
+          <input
+            type="text"
+            id="upiId"
+            name="upiId"
+            value={data.paymentDetails?.upiId || ''}
+            onChange={handleUPIChange}
+            placeholder="example@upi"
+            className={`block w-full rounded-md shadow-sm sm:text-sm ${
+              data.paymentDetails?.upiId
+                ? data.paymentDetails.isValid
+                  ? 'border-green-300 focus:border-green-500 focus:ring-green-500'
+                  : 'border-red-300 focus:border-red-500 focus:ring-red-500'
+                : 'border-gray-300 focus:border-indigo-500 focus:ring-indigo-500'
+            }`}
+          />
+          {data.paymentDetails?.upiId && !data.paymentDetails.isValid && (
+            <p className="mt-1 text-sm text-red-600">
+              Please enter a valid UPI ID (e.g., username@upi)
+            </p>
+          )}
+        </div>
       </div>
 
       <div>
         <label className="block text-sm font-medium text-gray-700">Payment QR Code</label>
-        <div className="mt-1 flex justify-center px-6 pt-5 pb-6 border-2 border-gray-300 border-dashed rounded-md">
+        <div className="mt-1 flex justify-center px-6 pt-5 pb-6 border-2 border-gray-300 border-dashed rounded-md hover:border-indigo-400 transition-colors">
           <div className="space-y-1 text-center">
             {data.paymentDetails?.qrImage ? (
-              <div className="relative">
+              <div className="relative group">
                 <img
                   src={data.paymentDetails.qrImage}
                   alt="Payment QR Code"
-                  className="mx-auto h-32 w-32 object-cover"
+                  className="mx-auto h-48 w-48 object-contain rounded-lg"
                 />
-                <button
-                  onClick={() => document.getElementById('qr-upload')?.click()}
-                  className="mt-2 text-sm text-indigo-600 hover:text-indigo-500"
-                >
-                  Change QR Code
-                </button>
+                <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-black bg-opacity-50 rounded-lg">
+                  <button
+                    onClick={() => document.getElementById('qr-upload')?.click()}
+                    className="px-4 py-2 text-sm text-white bg-indigo-600 rounded-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+                    disabled={uploading}
+                  >
+                    {uploading ? 'Uploading...' : 'Change QR Code'}
+                  </button>
+                </div>
               </div>
             ) : (
               <div className="flex flex-col items-center">
-                <Upload className="mx-auto h-12 w-12 text-gray-400" />
+                <Upload 
+                  className={`mx-auto h-12 w-12 ${
+                    uploading ? 'text-indigo-400 animate-pulse' : 'text-gray-400'
+                  }`}
+                />
                 <div className="flex text-sm text-gray-600">
                   <label
                     htmlFor="qr-upload"
                     className="relative cursor-pointer rounded-md font-medium text-indigo-600 hover:text-indigo-500 focus-within:outline-none focus-within:ring-2 focus-within:ring-offset-2 focus-within:ring-indigo-500"
                   >
-                    <span>Upload QR Code</span>
+                    <span>{uploading ? 'Uploading...' : 'Upload QR Code'}</span>
                     <input
                       id="qr-upload"
+                      name="qr-upload"
                       type="file"
                       className="sr-only"
                       onChange={handleQRUpload}
-                      accept="image/*"
+                      accept="image/png,image/jpeg,image/jpg"
                       disabled={uploading}
                     />
                   </label>

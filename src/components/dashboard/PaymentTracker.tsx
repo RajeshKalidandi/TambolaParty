@@ -1,54 +1,74 @@
 import { useEffect, useState } from 'react';
-import { CheckCircle, XCircle, Clock, Filter } from 'lucide-react';
-import type { PaymentVerification } from '../../types/payment';
+import { Trophy, Filter, Clock, Medal } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import toast from 'react-hot-toast';
 
-type FilterStatus = 'ALL' | 'PENDING' | 'VERIFIED' | 'REJECTED';
+interface GameWin {
+  id: string;
+  game_id: string;
+  room_name: string;
+  prize_type: 'full_house' | 'top_line' | 'middle_line' | 'bottom_line' | 'early_five';
+  prize_amount: number;
+  timestamp: string;
+}
 
-export default function PaymentTracker() {
-  const [verifications, setVerifications] = useState<PaymentVerification[]>([]);
+type FilterType = 'ALL' | 'FULL_HOUSE' | 'LINES' | 'EARLY_FIVE';
+
+export default function WinningsTracker() {
+  const [wins, setWins] = useState<GameWin[]>([]);
   const [loading, setLoading] = useState(true);
-  const [filterStatus, setFilterStatus] = useState<FilterStatus>('ALL');
+  const [filterType, setFilterType] = useState<FilterType>('ALL');
   const [dateRange, setDateRange] = useState<{ start: Date | null; end: Date | null }>({
     start: null,
     end: null
   });
 
   useEffect(() => {
-    loadVerifications();
+    loadWins();
     
     const subscription = supabase
-      .channel('payment_verifications')
+      .channel('game_wins')
       .on('postgres_changes', {
         event: '*',
         schema: 'public',
-        table: 'payment_verifications'
+        table: 'game_wins'
       }, () => {
-        loadVerifications();
+        loadWins();
       })
       .subscribe();
 
     return () => {
       subscription.unsubscribe();
     };
-  }, [filterStatus, dateRange]);
+  }, [filterType, dateRange]);
 
-  const loadVerifications = async () => {
+  const loadWins = async () => {
     try {
       let query = supabase
-        .from('payment_verifications')
-        .select('*')
+        .from('game_wins')
+        .select(`
+          id,
+          game_id,
+          room_name,
+          prize_type,
+          prize_amount,
+          timestamp
+        `)
         .order('timestamp', { ascending: false });
 
-      if (filterStatus !== 'ALL') {
-        query = query.eq('status', filterStatus);
+      if (filterType !== 'ALL') {
+        if (filterType === 'LINES') {
+          query = query.in('prize_type', ['top_line', 'middle_line', 'bottom_line']);
+        } else if (filterType === 'FULL_HOUSE') {
+          query = query.eq('prize_type', 'full_house');
+        } else {
+          query = query.eq('prize_type', 'early_five');
+        }
       }
 
       if (dateRange.start) {
         query = query.gte('timestamp', dateRange.start.toISOString());
       }
-
       if (dateRange.end) {
         query = query.lte('timestamp', dateRange.end.toISOString());
       }
@@ -56,166 +76,119 @@ export default function PaymentTracker() {
       const { data, error } = await query;
 
       if (error) throw error;
-      setVerifications(data || []);
+      setWins(data || []);
     } catch (error) {
-      console.error('Error loading verifications:', error);
-      toast.error('Failed to load verifications');
+      console.error('Error loading wins:', error);
+      toast.error('Failed to load winning history');
     } finally {
       setLoading(false);
     }
   };
 
-  const handleVerification = async (id: string, status: 'VERIFIED' | 'REJECTED', note?: string) => {
-    try {
-      const { error } = await supabase
-        .from('payment_verifications')
-        .update({
-          status,
-          verified_at: new Date().toISOString(),
-          host_note: note
-        })
-        .eq('id', id);
+  const getTotalWinnings = () => {
+    return wins.reduce((total, win) => total + win.prize_amount, 0);
+  };
 
-      if (error) throw error;
-      await loadVerifications();
-      toast.success(`Payment ${status.toLowerCase()}`);
-    } catch (error) {
-      console.error('Error updating verification:', error);
-      toast.error('Failed to update verification');
+  const getWinsByType = (type: string) => {
+    return wins.filter(win => win.prize_type === type).length;
+  };
+
+  const formatDate = (dateString: string) => {
+    return new Date(dateString).toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  };
+
+  const getPrizeIcon = (type: string) => {
+    switch (type) {
+      case 'full_house':
+        return <Trophy className="w-5 h-5 text-yellow-500" />;
+      case 'early_five':
+        return <Medal className="w-5 h-5 text-blue-500" />;
+      default:
+        return <Trophy className="w-5 h-5 text-green-500" />;
     }
   };
 
-  if (loading) {
-    return (
-      <div className="flex justify-center items-center h-48">
-        <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-blue-500"></div>
-      </div>
-    );
-  }
-
   return (
-    <div className="space-y-6">
-      <div className="flex justify-between items-center">
-        <h2 className="text-lg font-medium text-gray-900">Payment Verifications</h2>
-        <div className="flex items-center gap-4">
+    <div className="bg-white rounded-lg shadow-md p-6">
+      <div className="flex justify-between items-center mb-6">
+        <h2 className="text-xl font-semibold text-gray-800">Winnings History</h2>
+        <div className="flex gap-2">
           <select
-            value={filterStatus}
-            onChange={(e) => setFilterStatus(e.target.value as FilterStatus)}
-            className="rounded-lg border-gray-300 text-sm"
+            value={filterType}
+            onChange={(e) => setFilterType(e.target.value as FilterType)}
+            className="px-3 py-2 border rounded-lg text-sm"
           >
-            <option value="ALL">All Status</option>
-            <option value="PENDING">Pending</option>
-            <option value="VERIFIED">Verified</option>
-            <option value="REJECTED">Rejected</option>
+            <option value="ALL">All Wins</option>
+            <option value="FULL_HOUSE">Full House</option>
+            <option value="LINES">Lines</option>
+            <option value="EARLY_FIVE">Early Five</option>
           </select>
-          
-          <input
-            type="date"
-            value={dateRange.start?.toISOString().split('T')[0] || ''}
-            onChange={(e) => setDateRange(prev => ({
-              ...prev,
-              start: e.target.value ? new Date(e.target.value) : null
-            }))}
-            className="rounded-lg border-gray-300 text-sm"
-          />
-          
-          <input
-            type="date"
-            value={dateRange.end?.toISOString().split('T')[0] || ''}
-            onChange={(e) => setDateRange(prev => ({
-              ...prev,
-              end: e.target.value ? new Date(e.target.value) : null
-            }))}
-            className="rounded-lg border-gray-300 text-sm"
-          />
         </div>
       </div>
 
-      <div className="flex space-x-2 mb-4">
-        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
-          {verifications.filter(v => v.status === 'PENDING').length} Pending
-        </span>
-        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-          {verifications.filter(v => v.status === 'VERIFIED').length} Verified
-        </span>
-        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
-          {verifications.filter(v => v.status === 'REJECTED').length} Rejected
-        </span>
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+        <div className="bg-green-50 p-4 rounded-lg">
+          <p className="text-sm text-gray-600">Total Winnings</p>
+          <p className="text-2xl font-bold text-green-600">₹{getTotalWinnings()}</p>
+        </div>
+        <div className="bg-yellow-50 p-4 rounded-lg">
+          <p className="text-sm text-gray-600">Full House Wins</p>
+          <p className="text-2xl font-bold text-yellow-600">{getWinsByType('full_house')}</p>
+        </div>
+        <div className="bg-blue-50 p-4 rounded-lg">
+          <p className="text-sm text-gray-600">Early Five Wins</p>
+          <p className="text-2xl font-bold text-blue-600">{getWinsByType('early_five')}</p>
+        </div>
       </div>
 
-      <div className="bg-white shadow overflow-hidden sm:rounded-md">
-        {verifications.length === 0 ? (
-          <div className="p-4 text-center text-gray-500">
-            No payment verifications found
-          </div>
-        ) : (
-          <ul className="divide-y divide-gray-200">
-            {verifications.map((verification) => (
-              <li key={verification.id}>
-                <div className="px-4 py-4 sm:px-6">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center">
-                      <div className="flex-shrink-0">
-                        {verification.status === 'PENDING' && (
-                          <span className="h-8 w-8 rounded-full bg-yellow-100 flex items-center justify-center">
-                            <Clock className="h-5 w-5 text-yellow-600" />
-                          </span>
-                        )}
-                        {verification.status === 'VERIFIED' && (
-                          <span className="h-8 w-8 rounded-full bg-green-100 flex items-center justify-center">
-                            <CheckCircle className="h-5 w-5 text-green-600" />
-                          </span>
-                        )}
-                        {verification.status === 'REJECTED' && (
-                          <span className="h-8 w-8 rounded-full bg-red-100 flex items-center justify-center">
-                            <XCircle className="h-5 w-5 text-red-600" />
-                          </span>
-                        )}
-                      </div>
-                      <div className="ml-4">
-                        <h3 className="text-sm font-medium text-gray-900">
-                          {verification.playerName}
-                        </h3>
-                        <p className="text-sm text-gray-500">
-                          Amount: ₹{verification.amount}
-                        </p>
-                        <p className="text-xs text-gray-400">
-                          {new Date(verification.timestamp).toLocaleString()}
-                        </p>
-                      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full">
+          <thead>
+            <tr className="text-left border-b">
+              <th className="pb-3 text-gray-600">Prize</th>
+              <th className="pb-3 text-gray-600">Room</th>
+              <th className="pb-3 text-gray-600">Amount</th>
+              <th className="pb-3 text-gray-600">Date</th>
+            </tr>
+          </thead>
+          <tbody>
+            {loading ? (
+              <tr>
+                <td colSpan={4} className="text-center py-4">
+                  <Clock className="w-5 h-5 animate-spin mx-auto" />
+                </td>
+              </tr>
+            ) : wins.length === 0 ? (
+              <tr>
+                <td colSpan={4} className="text-center py-4 text-gray-500">
+                  No wins found
+                </td>
+              </tr>
+            ) : (
+              wins.map((win) => (
+                <tr key={win.id} className="border-b">
+                  <td className="py-3">
+                    <div className="flex items-center gap-2">
+                      {getPrizeIcon(win.prize_type)}
+                      <span className="capitalize">
+                        {win.prize_type.replace('_', ' ')}
+                      </span>
                     </div>
-                    <div className="flex items-center space-x-2">
-                      {verification.status === 'PENDING' && (
-                        <>
-                          <button
-                            onClick={() => handleVerification(verification.id, 'VERIFIED')}
-                            className="inline-flex items-center px-3 py-1 border border-transparent text-xs font-medium rounded-md text-white bg-green-600 hover:bg-green-700"
-                          >
-                            Verify
-                          </button>
-                          <button
-                            onClick={() => handleVerification(verification.id, 'REJECTED')}
-                            className="inline-flex items-center px-3 py-1 border border-transparent text-xs font-medium rounded-md text-white bg-red-600 hover:bg-red-700"
-                          >
-                            Reject
-                          </button>
-                        </>
-                      )}
-                      {verification.screenshot && (
-                        <button
-                          onClick={() => window.open(verification.screenshot, '_blank')}
-                          className="inline-flex items-center px-2 py-1 border border-gray-300 text-xs font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
-                        >
-                          View Screenshot
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
+                  </td>
+                  <td className="py-3">{win.room_name}</td>
+                  <td className="py-3">₹{win.prize_amount}</td>
+                  <td className="py-3">{formatDate(win.timestamp)}</td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
       </div>
     </div>
   );

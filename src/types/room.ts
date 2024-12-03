@@ -1,20 +1,18 @@
 export interface Room {
   id: string;
   name: string;
+  code: string;
   host_id: string;
-  ticket_price: number;
-  max_players: number;
+  type: GameType;
+  status: GameStatus;
   start_time: string;
-  status: 'waiting' | 'in_progress' | 'completed';
+  max_players: number;
   prizes: {
     fullHouse: number;
+    earlyFive: number;
     topLine: number;
     middleLine: number;
     bottomLine: number;
-  };
-  payment_details: {
-    upiId: string;
-    qrImage: string;
   };
   created_at: string;
 }
@@ -36,4 +34,20 @@ export interface PopularHost {
   rating: number;
   activeRooms: number;
   totalGamesHosted: number;
+}
+
+export interface Player {
+  id: string;
+  nickname: string;
+  ticket_number?: string;
+  wins?: GameWin[];
+}
+
+export interface GameWin {
+  id: string;
+  game_id: string;
+  room_name: string;
+  prize_type: 'full_house' | 'top_line' | 'middle_line' | 'bottom_line' | 'early_five';
+  prize_amount: number;
+  timestamp: string;
 }

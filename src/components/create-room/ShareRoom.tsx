@@ -19,13 +19,15 @@ interface RoomDetails {
   expires_at: string;
 }
 
-export default function ShareRoom({ roomId }: ShareRoomProps) {
+export default function ShareRoomComponent({ roomId }: ShareRoomProps) {
   const [roomDetails, setRoomDetails] = useState<RoomDetails | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [copied, setCopied] = useState(false);
   const shareUrl = `${window.location.origin}/join/${roomDetails?.room_code || ''}`;
 
   useEffect(() => {
-    loadRoomDetails();
+    if (!roomId) return;
+    void loadRoomDetails();
   }, [roomId]);
 
   const loadRoomDetails = async () => {
@@ -38,6 +40,8 @@ export default function ShareRoom({ roomId }: ShareRoomProps) {
         .single();
 
       if (error) throw error;
+      if (!data) throw new Error('Room not found');
+
       setRoomDetails(data as RoomDetails);
     } catch (error) {
       console.error('Error loading room details:', error);
@@ -50,7 +54,9 @@ export default function ShareRoom({ roomId }: ShareRoomProps) {
   const handleCopy = async (text: string) => {
     try {
       await navigator.clipboard.writeText(text);
+      setCopied(true);
       toast.success('Copied to clipboard!');
+      setTimeout(() => setCopied(false), 2000);
     } catch (error) {
       toast.error('Failed to copy to clipboard');
     }
@@ -95,20 +101,24 @@ export default function ShareRoom({ roomId }: ShareRoomProps) {
         </p>
       </div>
 
-      <div className="bg-gray-50 p-4 rounded-lg">
-        <div className="flex items-center justify-between mb-4">
+      <div className="bg-gray-50 p-4 rounded-lg space-y-4">
+        {/* Room Code */}
+        <div className="flex items-center justify-between">
           <div>
             <p className="text-sm font-medium text-gray-700">Room Code</p>
             <p className="text-2xl font-bold text-indigo-600">{roomDetails.room_code}</p>
           </div>
           <button
             onClick={() => handleCopy(roomDetails.room_code)}
-            className="p-2 text-gray-500 hover:text-indigo-600 transition-colors"
+            className={`p-2 rounded-full transition-colors ${
+              copied ? 'bg-green-100 text-green-600' : 'hover:bg-gray-100 text-gray-600'
+            }`}
           >
             <Copy className="h-5 w-5" />
           </button>
         </div>
 
+        {/* Share Link */}
         <div className="flex items-center justify-between">
           <div className="flex-1">
             <p className="text-sm font-medium text-gray-700">Share Link</p>
@@ -116,46 +126,41 @@ export default function ShareRoom({ roomId }: ShareRoomProps) {
           </div>
           <button
             onClick={() => handleCopy(shareUrl)}
-            className="p-2 text-gray-500 hover:text-indigo-600 transition-colors"
+            className={`p-2 rounded-full transition-colors ${
+              copied ? 'bg-green-100 text-green-600' : 'hover:bg-gray-100 text-gray-600'
+            }`}
           >
             <Copy className="h-5 w-5" />
           </button>
         </div>
-      </div>
 
-      <div className="flex justify-center space-x-4">
-        <button
-          onClick={handleWhatsAppShare}
-          className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
-        >
-          <Share2 className="h-5 w-5 mr-2" />
-          Share on WhatsApp
-        </button>
-      </div>
+        {/* Share Buttons */}
+        <div className="flex justify-center space-x-4 mt-4">
+          <button
+            onClick={handleWhatsAppShare}
+            className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
+          >
+            <Share2 className="h-5 w-5 mr-2" />
+            Share on WhatsApp
+          </button>
+        </div>
 
-      <div className="mt-6 border-t border-gray-200 pt-6">
-        <div className="flex items-center justify-between mb-4">
-          <div>
-            <p className="text-sm font-medium text-gray-700">Room Expires</p>
-            <p className="text-sm text-gray-500">
-              {new Date(roomDetails.expires_at).toLocaleString()}
-            </p>
+        {/* QR Code */}
+        {roomDetails.payment_details?.qrImage && (
+          <div className="mt-6">
+            <p className="text-sm font-medium text-gray-700 mb-2">Scan to Pay</p>
+            <div className="bg-white p-4 rounded-lg inline-block">
+              <QRCodeSVG value={roomDetails.payment_details.qrImage} size={200} />
+            </div>
+            <div className="mt-2">
+              <p className="text-sm text-gray-500">UPI ID: {roomDetails.payment_details.upiId}</p>
+              <p className="text-sm text-gray-500 flex items-center">
+                Amount: <IndianRupee className="h-4 w-4 mx-1" />
+                {roomDetails.ticket_price}
+              </p>
+            </div>
           </div>
-        </div>
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-sm font-medium text-gray-700">Ticket Price</p>
-            <p className="text-lg font-semibold text-gray-900 flex items-center">
-              <IndianRupee className="h-4 w-4 mr-1" />
-              {roomDetails.ticket_price}
-            </p>
-          </div>
-          <QRCodeSVG
-            value={roomDetails.payment_details.qrImage}
-            size={96}
-            className="border-2 border-gray-200 rounded-lg p-1"
-          />
-        </div>
+        )}
       </div>
     </div>
   );

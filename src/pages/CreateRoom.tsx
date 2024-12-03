@@ -3,14 +3,12 @@ import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import toast from 'react-hot-toast';
 import BasicDetails from '../components/create-room/BasicDetails';
-import TicketSettings from '../components/create-room/TicketSettings';
 import PrizeDistribution from '../components/create-room/PrizeDistribution';
-import PaymentSetup from '../components/create-room/PaymentSetup';
-import ShareRoom from '../components/create-room/ShareRoom';
+import ShareRoomComponent from '../components/create-room/ShareRoom';
 import StepIndicator from '../components/create-room/StepIndicator';
 import type { RoomFormData } from '../types/room-creation';
 
-const steps = ['Basic Details', 'Ticket Settings', 'Prize Distribution', 'Payment Setup', 'Share Room'];
+const steps = ['Basic Details', 'Prize Distribution', 'Share Room'];
 
 export default function CreateRoom() {
   const navigate = useNavigate();
@@ -20,19 +18,12 @@ export default function CreateRoom() {
     type: 'Standard',
     startTime: new Date(),
     maxPlayers: 50,
-    ticketPrice: 50,
-    multipleTickets: false,
     prizes: {
       fullHouse: 0,
       earlyFive: 0,
       topLine: 0,
       middleLine: 0,
       bottomLine: 0
-    },
-    paymentDetails: {
-      upiId: '',
-      qrImage: '',
-      isValid: false
     }
   });
 
@@ -56,12 +47,10 @@ export default function CreateRoom() {
             type: formData.type,
             start_time: formData.startTime.toISOString(),
             max_players: formData.maxPlayers,
-            ticket_price: formData.ticketPrice,
-            multiple_tickets: formData.multipleTickets,
             room_code: roomCode,
             host_id: userData.user.id,
             prizes: formData.prizes,
-            payment_details: formData.paymentDetails
+            status: 'waiting'
           })
           .select()
           .single();
@@ -91,13 +80,11 @@ export default function CreateRoom() {
       case 0:
         return <BasicDetails data={formData} onChange={handleChange} />;
       case 1:
-        return <TicketSettings data={formData} onChange={handleChange} />;
-      case 2:
         return <PrizeDistribution data={formData} onChange={handleChange} />;
-      case 3:
-        return <PaymentSetup data={formData} onChange={handleChange} />;
-      case 4:
-        return <ShareRoom roomId={formData.roomId!} />;
+      case 2:
+        return currentStep === steps.length - 1 && formData.roomId && (
+          <ShareRoomComponent roomId={formData.roomId} />
+        );
       default:
         return null;
     }

@@ -3,6 +3,7 @@ import SearchBar from '../components/lobby/SearchBar';
 import RoomCard from '../components/lobby/RoomCard';
 import BottomNav from '../components/lobby/BottomNav';
 import CreateRoomButton from '../components/lobby/CreateRoomButton';
+import JoinByCode from '../components/lobby/JoinByCode';
 import type { Room } from '../types/room';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Trophy, Zap, Users, Crown, IndianRupee } from 'lucide-react';
@@ -117,6 +118,10 @@ export default function GameLobby() {
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.1 }}
         >
+          <div className="mb-8">
+            <h2 className="text-2xl font-bold mb-4">Quick Join</h2>
+            <JoinByCode />
+          </div>
           <SearchBar onRoomsChange={setFilteredRooms} />
         </motion.div>
       </div>

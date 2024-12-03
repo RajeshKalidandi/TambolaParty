@@ -18,7 +18,6 @@ export type GameStatus = 'waiting' | 'in_progress' | 'completed';
 export interface Player {
   id: string;
   nickname: string;
-  paymentStatus: 'pending' | 'completed';
   ticketNumber: string | null;
 }
 
@@ -92,7 +91,7 @@ const GameScreen = () => {
           .order('created_at', { ascending: true }),
         supabase
           .from('room_players')
-          .select('user_id, nickname, payment_status, ticket_number')
+          .select('user_id, nickname, ticket_number')
           .eq('room_id', roomId),
         supabase
           .from('player_tickets')
@@ -204,15 +203,15 @@ const GameScreen = () => {
 
   const loadPlayers = async () => {
     if (!roomId) return;
-
+  
     try {
       const { data, error } = await supabase
         .from('room_players')
-        .select('user_id, nickname, payment_status, ticket_number')
+        .select('user_id, nickname, ticket_number')
         .eq('room_id', roomId);
-
+  
       if (error) throw error;
-
+  
       setGameState(prev => ({
         ...prev,
         players: data.map(transformPlayer),
@@ -222,14 +221,13 @@ const GameScreen = () => {
       toast.error('Failed to update players list');
     }
   };
-
+  
   const transformPlayer = (player: any): Player => ({
     id: player.user_id,
     nickname: player.nickname,
-    paymentStatus: player.payment_status,
-    ticketNumber: player.ticket_number,
+    ticketNumber: player.ticket_number
   });
-
+  
   const transformMessage = (message: any): GameMessage => ({
     id: message.id,
     playerId: message.player_id,

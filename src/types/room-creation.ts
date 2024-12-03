@@ -1,13 +1,16 @@
 export type RoomType = 'Quick' | 'Standard' | 'Premium' | 'Private';
 
+interface PaymentDetails {
+  upiId?: string;
+  qrImage?: string;
+  isValid?: boolean;
+}
+
 export interface RoomFormData {
   name: string;
   type: RoomType;
   startTime: Date;
   maxPlayers: number;
-  ticketPrice: number;
-  multipleTickets: boolean;
-  roomId?: string;
   prizes: {
     fullHouse: number;
     earlyFive: number;
@@ -15,9 +18,6 @@ export interface RoomFormData {
     middleLine: number;
     bottomLine: number;
   };
-  paymentDetails: {
-    upiId: string;
-    qrImage: string;
-    isValid: boolean;
-  };
+  roomId?: string;
+  paymentDetails?: PaymentDetails;
 }
