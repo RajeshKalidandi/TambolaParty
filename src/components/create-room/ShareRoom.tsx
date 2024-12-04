@@ -3,6 +3,7 @@ import { QRCodeSVG } from 'qrcode.react';
 import { Copy, Share2, IndianRupee } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import toast from 'react-hot-toast';
+import { motion } from 'framer-motion';
 
 interface ShareRoomProps {
   roomId: string;
@@ -12,7 +13,7 @@ interface RoomDetails {
   room_code: string;
   name: string;
   ticket_price: number;
-  payment_details: {
+  payment_details?: {
     upiId: string;
     qrImage: string;
   };
@@ -76,10 +77,25 @@ export default function ShareRoomComponent({ roomId }: ShareRoomProps) {
     window.open(`https://wa.me/?text=${message}`, '_blank');
   };
 
+  const container = {
+    hidden: { opacity: 0 },
+    show: {
+      opacity: 1,
+      transition: {
+        staggerChildren: 0.1
+      }
+    }
+  };
+
+  const item = {
+    hidden: { y: 20, opacity: 0 },
+    show: { y: 0, opacity: 1 }
+  };
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center p-8">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#FF5722]"></div>
       </div>
     );
   }
@@ -87,81 +103,102 @@ export default function ShareRoomComponent({ roomId }: ShareRoomProps) {
   if (!roomDetails) {
     return (
       <div className="text-center p-8">
-        <p className="text-gray-600">Failed to load room details</p>
+        <p className="text-white/60">Failed to load room details</p>
       </div>
     );
   }
 
   return (
-    <div className="space-y-6 animate-fadeIn">
-      <div className="text-center">
-        <h3 className="text-lg font-medium text-gray-900">Share Room</h3>
-        <p className="mt-1 text-sm text-gray-500">
+    <motion.div
+      variants={container}
+      initial="hidden"
+      animate="show"
+      className="space-y-6 p-6 rounded-2xl bg-gradient-to-br from-gray-900/50 to-black/50 backdrop-blur-xl border border-white/10"
+    >
+      <motion.div variants={item} className="text-center">
+        <h3 className="text-lg font-medium text-white">Share Room</h3>
+        <p className="mt-1 text-sm text-white/60">
           Share the room code or link with your friends
         </p>
-      </div>
+      </motion.div>
 
-      <div className="bg-gray-50 p-4 rounded-lg space-y-4">
+      <motion.div variants={item} className="space-y-4">
         {/* Room Code */}
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-sm font-medium text-gray-700">Room Code</p>
-            <p className="text-2xl font-bold text-indigo-600">{roomDetails.room_code}</p>
+        <div className="relative group">
+          <div className="absolute -inset-0.5 bg-gradient-to-br from-[#FF5722] to-[#FF8A65] rounded-lg blur opacity-20 group-hover:opacity-30 transition-all duration-300" />
+          <div className="relative p-4 bg-black/30 backdrop-blur-xl border border-white/10 rounded-lg">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-white/60">Room Code</p>
+                <p className="text-2xl font-bold text-[#FF5722]">{roomDetails.room_code}</p>
+              </div>
+              <button
+                onClick={() => handleCopy(roomDetails.room_code)}
+                className={`p-2 rounded-full transition-colors ${
+                  copied ? 'bg-green-500/20 text-green-400' : 'hover:bg-white/5 text-white/60'
+                }`}
+              >
+                <Copy className="h-5 w-5" />
+              </button>
+            </div>
           </div>
-          <button
-            onClick={() => handleCopy(roomDetails.room_code)}
-            className={`p-2 rounded-full transition-colors ${
-              copied ? 'bg-green-100 text-green-600' : 'hover:bg-gray-100 text-gray-600'
-            }`}
-          >
-            <Copy className="h-5 w-5" />
-          </button>
         </div>
 
         {/* Share Link */}
-        <div className="flex items-center justify-between">
-          <div className="flex-1">
-            <p className="text-sm font-medium text-gray-700">Share Link</p>
-            <p className="text-sm text-gray-500 truncate">{shareUrl}</p>
+        <div className="relative group">
+          <div className="absolute -inset-0.5 bg-gradient-to-br from-[#1A237E] to-[#3949AB] rounded-lg blur opacity-20 group-hover:opacity-30 transition-all duration-300" />
+          <div className="relative p-4 bg-black/30 backdrop-blur-xl border border-white/10 rounded-lg">
+            <div className="flex items-center justify-between">
+              <div className="flex-1">
+                <p className="text-sm font-medium text-white/60">Share Link</p>
+                <p className="text-sm text-white/40 truncate">{shareUrl}</p>
+              </div>
+              <button
+                onClick={() => handleCopy(shareUrl)}
+                className={`p-2 rounded-full transition-colors ${
+                  copied ? 'bg-green-500/20 text-green-400' : 'hover:bg-white/5 text-white/60'
+                }`}
+              >
+                <Copy className="h-5 w-5" />
+              </button>
+            </div>
           </div>
-          <button
-            onClick={() => handleCopy(shareUrl)}
-            className={`p-2 rounded-full transition-colors ${
-              copied ? 'bg-green-100 text-green-600' : 'hover:bg-gray-100 text-gray-600'
-            }`}
-          >
-            <Copy className="h-5 w-5" />
-          </button>
         </div>
 
         {/* Share Buttons */}
         <div className="flex justify-center space-x-4 mt-4">
           <button
             onClick={handleWhatsAppShare}
-            className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
+            className="relative group inline-flex items-center px-6 py-3 rounded-lg overflow-hidden"
           >
-            <Share2 className="h-5 w-5 mr-2" />
-            Share on WhatsApp
+            <div className="absolute -inset-0.5 bg-gradient-to-br from-green-500 to-green-700 rounded-lg blur opacity-50 group-hover:opacity-70 transition-all duration-300" />
+            <div className="relative flex items-center bg-black/30 backdrop-blur-xl px-6 py-2 rounded-lg border border-white/10">
+              <Share2 className="h-5 w-5 mr-2" />
+              Share on WhatsApp
+            </div>
           </button>
         </div>
 
         {/* QR Code */}
         {roomDetails.payment_details?.qrImage && (
-          <div className="mt-6">
-            <p className="text-sm font-medium text-gray-700 mb-2">Scan to Pay</p>
-            <div className="bg-white p-4 rounded-lg inline-block">
-              <QRCodeSVG value={roomDetails.payment_details.qrImage} size={200} />
+          <motion.div variants={item} className="relative group mt-6">
+            <div className="absolute -inset-0.5 bg-gradient-to-br from-[#FFD700] to-[#FFA000] rounded-lg blur opacity-20 group-hover:opacity-30 transition-all duration-300" />
+            <div className="relative p-6 bg-black/30 backdrop-blur-xl border border-white/10 rounded-lg text-center">
+              <p className="text-sm font-medium text-white/60 mb-4">Scan to Pay</p>
+              <div className="bg-white p-4 rounded-lg inline-block">
+                <QRCodeSVG value={roomDetails.payment_details.qrImage} size={200} />
+              </div>
+              <div className="mt-4 space-y-1">
+                <p className="text-sm text-white/40">UPI ID: {roomDetails.payment_details.upiId}</p>
+                <p className="text-sm text-white/40 flex items-center justify-center">
+                  Amount: <IndianRupee className="h-4 w-4 mx-1" />
+                  <span className="text-white">{roomDetails.ticket_price}</span>
+                </p>
+              </div>
             </div>
-            <div className="mt-2">
-              <p className="text-sm text-gray-500">UPI ID: {roomDetails.payment_details.upiId}</p>
-              <p className="text-sm text-gray-500 flex items-center">
-                Amount: <IndianRupee className="h-4 w-4 mx-1" />
-                {roomDetails.ticket_price}
-              </p>
-            </div>
-          </div>
+          </motion.div>
         )}
-      </div>
-    </div>
+      </motion.div>
+    </motion.div>
   );
 }

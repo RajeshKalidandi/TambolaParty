@@ -1,47 +1,45 @@
 import { useEffect, useState } from 'react';
-import { Check, X, Loader, Search, Filter } from 'lucide-react';
+import { Check, X, Loader2, AlertTriangle } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import toast from 'react-hot-toast';
 import { useAuth } from '../../lib/auth/AuthContext';
 import { motion, AnimatePresence } from 'framer-motion';
 
-interface PaymentRequest {
+interface Player {
   id: string;
-  room_id: string;
   user_id: string;
-  transaction_id: string;
-  amount: number;
-  ticket_count: number;
-  status: 'pending' | 'approved' | 'rejected';
-  created_at: string;
+  room_id: string;
+  nickname: string;
+  ticket_number: string | null;
+  payment_verified: boolean;
+  payment_verified_at: string | null;
   user: {
     username: string;
     avatar_url: string;
   };
 }
 
-export default function PaymentVerification({ roomId }: { roomId: string }) {
+export default function PaymentVerification({ roomId, isHost }: { roomId: string; isHost: boolean }) {
   const { user } = useAuth();
-  const [requests, setRequests] = useState<PaymentRequest[]>([]);
+  const [players, setPlayers] = useState<Player[]>([]);
   const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState<'all' | 'pending' | 'approved' | 'rejected'>('pending');
-  const [searchQuery, setSearchQuery] = useState('');
+  const [filter, setFilter] = useState<'all' | 'verified' | 'pending'>('pending');
 
   useEffect(() => {
-    void loadPaymentRequests();
+    void loadPlayers();
     // Subscribe to real-time updates
     const channel = supabase
-      .channel('payment_verifications')
+      .channel('room_players')
       .on(
         'postgres_changes',
         {
           event: '*',
           schema: 'public',
-          table: 'payment_verifications',
+          table: 'room_players',
           filter: `room_id=eq.${roomId}`
         },
         () => {
-          void loadPaymentRequests();
+          void loadPlayers();
         }
       )
       .subscribe();
@@ -51,11 +49,11 @@ export default function PaymentVerification({ roomId }: { roomId: string }) {
     };
   }, [roomId, filter]);
 
-  const loadPaymentRequests = async () => {
+  const loadPlayers = async () => {
     try {
       setLoading(true);
       const query = supabase
-        .from('payment_verifications')
+        .from('room_players')
         .select(`
           *,
           user:user_id (
@@ -66,150 +64,122 @@ export default function PaymentVerification({ roomId }: { roomId: string }) {
         .eq('room_id', roomId);
 
       if (filter !== 'all') {
-        query.eq('status', filter);
+        query.eq('payment_verified', filter === 'verified');
       }
 
       const { data, error } = await query;
       if (error) throw error;
 
-      setRequests(data as PaymentRequest[]);
+      setPlayers(data as Player[]);
     } catch (error) {
-      console.error('Error loading payment requests:', error);
-      toast.error('Failed to load payment requests');
+      console.error('Error loading players:', error);
+      toast.error('Failed to load players');
     } finally {
       setLoading(false);
     }
   };
 
-  const handleVerification = async (requestId: string, status: 'approved' | 'rejected') => {
+  const handleVerification = async (playerId: string, verified: boolean) => {
     try {
       const { error } = await supabase
-        .from('payment_verifications')
-        .update({ status })
-        .eq('id', requestId);
+        .from('room_players')
+        .update({ 
+          payment_verified: verified,
+          payment_verified_at: verified ? new Date().toISOString() : null 
+        })
+        .eq('id', playerId);
 
       if (error) throw error;
 
-      if (status === 'approved') {
-        // Generate tickets
-        const request = requests.find(r => r.id === requestId);
-        if (request) {
-          const { error: ticketError } = await supabase.rpc('generate_tickets', {
-            p_user_id: request.user_id,
-            p_room_id: roomId,
-            p_ticket_count: request.ticket_count
-          });
-
-          if (ticketError) throw ticketError;
-        }
-      }
-
-      toast.success(`Payment ${status} successfully`);
-      void loadPaymentRequests();
+      toast.success(`Payment ${verified ? 'verified' : 'unverified'} successfully`);
+      void loadPlayers();
     } catch (error) {
       console.error('Error updating payment status:', error);
       toast.error('Failed to update payment status');
     }
   };
 
-  const filteredRequests = requests.filter(request =>
-    request.transaction_id.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    request.user.username.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  if (!isHost) {
+    const currentPlayer = players.find(p => p.user_id === user?.id);
+    return (
+      <div className="bg-white rounded-lg shadow p-4">
+        <div className="flex items-center justify-between">
+          <h2 className="text-lg font-semibold text-gray-900">Payment Status</h2>
+          {currentPlayer?.payment_verified ? (
+            <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-green-100 text-green-800">
+              <Check className="w-4 h-4 mr-1" />
+              Verified
+            </span>
+          ) : (
+            <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-yellow-100 text-yellow-800">
+              <AlertTriangle className="w-4 h-4 mr-1" />
+              Pending Verification
+            </span>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="bg-white rounded-lg shadow p-6">
       <div className="flex justify-between items-center mb-6">
         <h2 className="text-xl font-semibold text-gray-900">Payment Verifications</h2>
-        <div className="flex space-x-4">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
-            <input
-              type="text"
-              placeholder="Search transactions..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-10 pr-4 py-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500"
-            />
-          </div>
-          <select
-            value={filter}
-            onChange={(e) => setFilter(e.target.value as typeof filter)}
-            className="border border-gray-300 rounded-md px-4 py-2 focus:ring-indigo-500 focus:border-indigo-500"
-          >
-            <option value="all">All</option>
-            <option value="pending">Pending</option>
-            <option value="approved">Approved</option>
-            <option value="rejected">Rejected</option>
-          </select>
-        </div>
+        <select
+          value={filter}
+          onChange={(e) => setFilter(e.target.value as typeof filter)}
+          className="border border-gray-300 rounded-md px-4 py-2 focus:ring-indigo-500 focus:border-indigo-500"
+        >
+          <option value="all">All Players</option>
+          <option value="pending">Pending</option>
+          <option value="verified">Verified</option>
+        </select>
       </div>
 
       {loading ? (
         <div className="flex justify-center items-center py-8">
-          <Loader className="w-8 h-8 animate-spin text-indigo-600" />
-        </div>
-      ) : filteredRequests.length === 0 ? (
-        <div className="text-center py-8 text-gray-500">
-          No payment requests found
+          <Loader2 className="w-8 h-8 animate-spin text-indigo-600" />
         </div>
       ) : (
         <div className="space-y-4">
           <AnimatePresence>
-            {filteredRequests.map((request) => (
+            {players.map((player) => (
               <motion.div
-                key={request.id}
+                key={player.id}
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -20 }}
-                className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow"
+                className="flex items-center justify-between p-4 bg-gray-50 rounded-lg"
               >
-                <div className="flex justify-between items-center">
-                  <div className="flex items-center space-x-4">
-                    <img
-                      src={request.user.avatar_url || '/default-avatar.png'}
-                      alt={request.user.username}
-                      className="w-10 h-10 rounded-full"
-                    />
-                    <div>
-                      <p className="font-medium text-gray-900">{request.user.username}</p>
-                      <p className="text-sm text-gray-500">
-                        Transaction ID: {request.transaction_id}
-                      </p>
-                    </div>
+                <div className="flex items-center space-x-4">
+                  <img
+                    src={player.user.avatar_url || '/default-avatar.png'}
+                    alt={player.user.username}
+                    className="w-10 h-10 rounded-full"
+                  />
+                  <div>
+                    <h3 className="font-medium text-gray-900">{player.user.username}</h3>
+                    <p className="text-sm text-gray-500">Ticket #{player.ticket_number || 'Not assigned'}</p>
                   </div>
-                  <div className="flex items-center space-x-4">
-                    <div className="text-right">
-                      <p className="font-medium text-gray-900">₹{request.amount}</p>
-                      <p className="text-sm text-gray-500">{request.ticket_count} tickets</p>
-                    </div>
-                    {request.status === 'pending' ? (
-                      <div className="flex space-x-2">
-                        <button
-                          onClick={() => handleVerification(request.id, 'approved')}
-                          className="p-2 text-green-600 hover:bg-green-50 rounded-full"
-                        >
-                          <Check className="w-5 h-5" />
-                        </button>
-                        <button
-                          onClick={() => handleVerification(request.id, 'rejected')}
-                          className="p-2 text-red-600 hover:bg-red-50 rounded-full"
-                        >
-                          <X className="w-5 h-5" />
-                        </button>
-                      </div>
-                    ) : (
-                      <span
-                        className={`px-3 py-1 rounded-full text-sm font-medium ${
-                          request.status === 'approved'
-                            ? 'bg-green-100 text-green-800'
-                            : 'bg-red-100 text-red-800'
-                        }`}
-                      >
-                        {request.status}
-                      </span>
-                    )}
-                  </div>
+                </div>
+                <div className="flex items-center space-x-2">
+                  {player.payment_verified ? (
+                    <button
+                      onClick={() => handleVerification(player.id, false)}
+                      className="inline-flex items-center px-3 py-1 border border-transparent text-sm font-medium rounded-md text-red-700 bg-red-100 hover:bg-red-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
+                    >
+                      <X className="w-4 h-4 mr-1" />
+                      Unverify
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => handleVerification(player.id, true)}
+                      className="inline-flex items-center px-3 py-1 border border-transparent text-sm font-medium rounded-md text-green-700 bg-green-100 hover:bg-green-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
+                    >
+                      <Check className="w-4 h-4 mr-1" />
+                      Verify
+                    </button>
+                  )}
                 </div>
               </motion.div>
             ))}

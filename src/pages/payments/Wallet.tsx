@@ -7,6 +7,7 @@ import { useAuth } from '../../lib/auth/AuthContext';
 import { supabase } from '../../lib/supabase';
 import type { Transaction, Wallet } from '../../types/wallet';
 import type { RealtimePostgresChangesPayload } from '@supabase/supabase-js';
+import WinningsHistory from '../../components/wallet/WinningsHistory';
 
 export default function WalletPage() {
   const [isLoading, setIsLoading] = useState(false);
@@ -171,32 +172,44 @@ export default function WalletPage() {
             transactions.map((transaction) => (
               <motion.div
                 key={transaction.id}
-                initial={{ x: -20, opacity: 0 }}
-                animate={{ x: 0, opacity: 1 }}
-                className="bg-gray-800 rounded-lg p-4 flex items-center justify-between"
+                initial={{ y: 20, opacity: 0 }}
+                animate={{ y: 0, opacity: 1 }}
+                className="bg-gray-800 rounded-lg p-4"
               >
-                <div className="flex items-center gap-4">
-                  {transaction.type === 'credit' ? (
-                    <ArrowDownCircle className="w-6 h-6 text-green-500" />
-                  ) : (
-                    <ArrowUpCircle className="w-6 h-6 text-red-500" />
-                  )}
-                  <div>
-                    <p className="font-medium">{transaction.description}</p>
-                    <p className="text-sm text-gray-400">
-                      {new Date(transaction.created_at).toLocaleDateString()}
-                    </p>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    {transaction.type === 'credit' ? (
+                      <ArrowDownCircle className="w-5 h-5 text-green-500" />
+                    ) : (
+                      <ArrowUpCircle className="w-5 h-5 text-red-500" />
+                    )}
+                    <div>
+                      <p className="font-medium">{transaction.description}</p>
+                      <p className="text-sm text-gray-400">
+                        {new Date(transaction.created_at).toLocaleString()}
+                      </p>
+                    </div>
                   </div>
+                  <p
+                    className={`text-lg font-semibold ${
+                      transaction.type === 'credit'
+                        ? 'text-green-500'
+                        : 'text-red-500'
+                    }`}
+                  >
+                    {transaction.type === 'credit' ? '+' : '-'}₹
+                    {transaction.amount.toFixed(2)}
+                  </p>
                 </div>
-                <p className={`font-semibold ${
-                  transaction.type === 'credit' ? 'text-green-500' : 'text-red-500'
-                }`}>
-                  {transaction.type === 'credit' ? '+' : '-'}₹{transaction.amount}
-                </p>
               </motion.div>
             ))
           )}
         </div>
+      </div>
+
+      {/* Winnings History */}
+      <div className="p-4">
+        <WinningsHistory />
       </div>
     </div>
   );

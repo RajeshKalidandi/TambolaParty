@@ -8,13 +8,13 @@ import TicketView from '../components/game/TicketView';
 import PlayerList from '../components/game/PlayerList';
 import ClaimsFeed from '../components/game/ClaimsFeed';
 import ChatBubble from '../components/game/ChatBubble';
+import PaymentVerification from '../components/game/PaymentVerification';
 import { Volume2, VolumeX, AlertTriangle, Loader2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import type { Ticket, Winner, Claim } from '../types/game';
+import type { GameStatus } from '../types/room';
 
 // Types
-export type GameStatus = 'waiting' | 'in_progress' | 'completed';
-
 export interface Player {
   id: string;
   nickname: string;
@@ -49,6 +49,7 @@ interface GameState {
   totalPrizePool: number;
   winners: Winner[];
   autoDaub: boolean;
+  isHost: boolean;
 }
 
 const INITIAL_GAME_STATE: GameState = {
@@ -63,7 +64,8 @@ const INITIAL_GAME_STATE: GameState = {
   isLoading: true,
   totalPrizePool: 0,
   winners: [],
-  autoDaub: true
+  autoDaub: true,
+  isHost: false
 };
 
 const GameScreen = () => {
@@ -72,13 +74,14 @@ const GameScreen = () => {
   const navigate = useNavigate();
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [gameState, setGameState] = useState<GameState>(INITIAL_GAME_STATE);
+  const [claimingPrize, setClaimingPrize] = useState<string | null>(null);
 
   const loadInitialGameState = useCallback(async () => {
     if (!roomId || !user?.id) return;
 
     try {
       const [roomData, numbersData, claimsData, playersData, ticketData, messagesData] = await Promise.all([
-        supabase.from('rooms').select('status').eq('id', roomId).single(),
+        supabase.from('rooms').select('status, host_id').eq('id', roomId).single(),
         supabase
           .from('game_numbers')
           .select('number, created_at')
@@ -91,7 +94,7 @@ const GameScreen = () => {
           .order('created_at', { ascending: true }),
         supabase
           .from('room_players')
-          .select('user_id, nickname, ticket_number')
+          .select('user_id, nickname, ticket_number, payment_verified')
           .eq('room_id', roomId),
         supabase
           .from('player_tickets')
@@ -112,6 +115,16 @@ const GameScreen = () => {
       if (playersData.error) throw playersData.error;
 
       const numbers = numbersData.data.map(n => n.number);
+      const currentPlayer = playersData.data.find(p => p.user_id === user.id);
+      
+      if (!currentPlayer?.payment_verified && roomData.data.host_id !== user.id) {
+        setGameState(prev => ({
+          ...prev,
+          error: 'Your payment has not been verified by the host yet. Please wait for verification.',
+          isLoading: false,
+        }));
+        return;
+      }
       
       setGameState({
         currentNumber: numbers[numbers.length - 1] || null,
@@ -125,7 +138,8 @@ const GameScreen = () => {
         isLoading: false,
         totalPrizePool: 0,
         winners: [],
-        autoDaub: true
+        autoDaub: true,
+        isHost: roomData.data.host_id === user.id
       });
     } catch (error) {
       console.error('Error loading game state:', error);
@@ -296,9 +310,85 @@ const GameScreen = () => {
     console.log('Marking number at', row, col, 'for ticket', ticketId);
   };
 
-  const handleClaim = async (prizeType: string) => {
-    // Implementation for claiming prizes
-    console.log('Claiming prize:', prizeType);
+  const handlePrizeClaim = async (prizeType: string) => {
+    if (!user?.id || !roomId) return;
+
+    try {
+      setClaimingPrize(prizeType);
+
+      // Verify the claim
+      const isValid = verifyPrizeClaim(prizeType, gameState.ticket!, gameState.calledNumbers);
+      if (!isValid) {
+        toast.error('Invalid claim. Please check your ticket.');
+        return;
+      }
+
+      // Submit the claim
+      const { data: claimData, error: claimError } = await supabase
+        .from('prize_claims')
+        .insert({
+          room_id: roomId,
+          player_id: user.id,
+          prize_type: prizeType,
+          numbers: gameState.calledNumbers,
+        })
+        .select()
+        .single();
+
+      if (claimError) throw claimError;
+
+      // Record the winning in player_winnings
+      const { data: roomData } = await supabase
+        .from('rooms')
+        .select('name, code, host:host_id(username), prizes')
+        .eq('id', roomId)
+        .single();
+
+      if (roomData) {
+        await supabase
+          .from('player_winnings')
+          .insert({
+            player_id: user.id,
+            room_id: roomId,
+            room_code: roomData.code,
+            room_name: roomData.name,
+            host_name: roomData.host?.username || 'Unknown Host',
+            prize_type: prizeType,
+            prize_amount: roomData.prizes[prizeType] || 0,
+          });
+      }
+
+      // Update game state
+      setGameState(prev => ({
+        ...prev,
+        claims: [...prev.claims, {
+          id: claimData.id,
+          playerId: user.id,
+          prizeType,
+          timestamp: new Date(),
+          playerName: user.username || 'Unknown Player',
+        }],
+      }));
+
+      toast.success('Prize claimed successfully!');
+      
+      // Play winning sound
+      void playWinSound();
+    } catch (error) {
+      console.error('Error claiming prize:', error);
+      toast.error('Failed to claim prize');
+    } finally {
+      setClaimingPrize(null);
+    }
+  };
+
+  const playWinSound = async () => {
+    try {
+      const audio = new Audio('/sounds/win.mp3');
+      await audio.play();
+    } catch (error) {
+      console.error('Error playing sound:', error);
+    }
   };
 
   if (!roomId || !user) {
@@ -332,16 +422,18 @@ const GameScreen = () => {
 
   if (gameState.error) {
     return (
-      <div className="min-h-screen bg-gray-100 flex items-center justify-center">
-        <div className="bg-white rounded-lg shadow p-6 max-w-md w-full">
-          <AlertTriangle className="mx-auto text-red-500 mb-4" size={48} />
-          <h2 className="text-xl font-semibold text-center mb-2">Error</h2>
+      <div className="flex flex-col items-center justify-center min-h-screen bg-gray-50 p-4">
+        <div className="bg-white rounded-lg shadow-lg p-6 max-w-md w-full">
+          <div className="flex items-center justify-center text-red-500 mb-4">
+            <AlertTriangle className="w-12 h-12" />
+          </div>
+          <h2 className="text-xl font-semibold text-center mb-4">Error</h2>
           <p className="text-gray-600 text-center">{gameState.error}</p>
           <button
-            onClick={() => navigate('/lobby')}
-            className="mt-4 w-full bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700 transition-colors"
+            onClick={() => navigate('/quick-join')}
+            className="mt-6 w-full bg-indigo-600 text-white py-2 px-4 rounded-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
           >
-            Return to Lobby
+            Back to Quick Join
           </button>
         </div>
       </div>
@@ -349,13 +441,15 @@ const GameScreen = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gray-100 p-4">
-      <div className="grid lg:grid-cols-3 gap-4 max-w-7xl mx-auto">
-        <div className="lg:col-span-2 space-y-4">
+    <div className="container mx-auto px-4 py-8">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Left Column */}
+        <div className="space-y-6">
+          <PaymentVerification roomId={roomId} isHost={gameState.isHost} />
           <div className="bg-white rounded-lg shadow p-4">
             <NumberDisplay 
               gameId={roomId}
-              isHost={false}
+              isHost={gameState.isHost}
             />
             <button
               onClick={toggleSound}
@@ -374,7 +468,7 @@ const GameScreen = () => {
                 currentNumber={gameState.currentNumber}
                 onToggleAutoDaub={handleToggleAutoDaub}
                 onNumberMark={handleNumberMark}
-                onClaim={handleClaim}
+                onClaim={handlePrizeClaim}
                 prizes={{
                   fullHouse: false,
                   earlyFive: false,
@@ -401,7 +495,7 @@ const GameScreen = () => {
           </div>
         </div>
 
-        <div className="space-y-4">
+        <div className="space-y-6">
           <div className="bg-white rounded-lg shadow p-4">
             <PlayerList 
               gameId={roomId}

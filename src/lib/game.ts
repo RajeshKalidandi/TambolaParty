@@ -7,9 +7,21 @@ type Ticket = Database['public']['Tables']['tickets']['Row'];
 
 // Create a new game room
 export const createRoom = async (roomData: Omit<Room, 'id' | 'created_at'>) => {
+  const code = Math.random().toString(36).substring(2, 8).toUpperCase();
+  
   const { data, error } = await supabase
     .from('rooms')
-    .insert(roomData)
+    .insert({
+      ...roomData,
+      code,
+      prizes: {
+        full_house: roomData.prizes.fullHouse,
+        early_five: roomData.prizes.earlyFive,
+        top_line: roomData.prizes.topLine,
+        middle_line: roomData.prizes.middleLine,
+        bottom_line: roomData.prizes.bottomLine
+      }
+    })
     .select()
     .single();
   

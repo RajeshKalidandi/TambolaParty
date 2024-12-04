@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Calendar, Users, TrendingUp, IndianRupee } from 'lucide-react';
+import { Calendar, Users, TrendingUp, IndianRupee, Sparkles } from 'lucide-react';
+import { motion } from 'framer-motion';
 import type { HostStats } from '../../types/dashboard';
 import { supabase } from '../../lib/supabase';
 
@@ -54,51 +55,87 @@ export default function StatisticsGrid({ initialStats }: StatisticsGridProps) {
       icon: Calendar,
       label: "Today's Games",
       value: stats.todayGames,
-      color: 'text-blue-600',
-      bg: 'bg-blue-50',
+      gradient: 'from-blue-500 to-blue-700',
+      glowColor: 'blue',
     },
     {
       icon: Users,
       label: 'Active Players',
       value: stats.activePlayers,
-      color: 'text-purple-600',
-      bg: 'bg-purple-50',
+      gradient: 'from-purple-500 to-purple-700',
+      glowColor: 'purple',
     },
     {
       icon: TrendingUp,
       label: 'Success Rate',
       value: `${stats.successRate}%`,
-      color: 'text-green-600',
-      bg: 'bg-green-50',
+      gradient: 'from-[#FF5722] to-[#FF8A65]',
+      glowColor: 'orange',
     },
     {
       icon: IndianRupee,
       label: 'Total Earnings',
       value: `₹${stats.totalEarnings}`,
-      color: 'text-orange-600',
-      bg: 'bg-orange-50',
+      gradient: 'from-[#FFD700] to-[#FFA000]',
+      glowColor: 'yellow',
     },
   ];
 
+  const container = {
+    hidden: { opacity: 0 },
+    show: {
+      opacity: 1,
+      transition: {
+        staggerChildren: 0.1
+      }
+    }
+  };
+
+  const item = {
+    hidden: { y: 20, opacity: 0 },
+    show: { y: 0, opacity: 1 }
+  };
+
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-      {cards.map((card) => (
-        <div key={card.label} className="bg-white rounded-xl shadow-sm p-6">
-          <div className="flex items-center gap-4">
-            <div className={`${card.bg} p-3 rounded-lg`}>
-              <card.icon className={`w-6 h-6 ${card.color}`} />
+    <motion.div 
+      variants={container}
+      initial="hidden"
+      animate="show"
+      className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6"
+    >
+      {cards.map((card, index) => (
+        <motion.div 
+          key={card.label}
+          variants={item}
+          className="relative group"
+        >
+          {/* Glow Effect */}
+          <div className={`absolute inset-0 bg-gradient-to-br ${card.gradient} rounded-2xl blur-xl group-hover:blur-2xl transition-all opacity-25`}></div>
+          
+          {/* Card Content */}
+          <div className="relative bg-white/10 backdrop-blur-md border border-white/20 rounded-2xl p-6 hover:transform hover:scale-105 transition-all duration-300">
+            <div className={`bg-gradient-to-br ${card.gradient} rounded-2xl p-4 mb-4 w-fit`}>
+              <card.icon className="w-6 h-6 text-white" />
             </div>
-            <div>
-              <h3 className="text-gray-500 text-sm">{card.label}</h3>
-              {loading ? (
-                <div className="h-8 w-24 bg-gray-200 animate-pulse rounded"></div>
-              ) : (
-                <p className="text-2xl font-bold text-gray-900">{card.value}</p>
-              )}
+            
+            <h3 className="text-gray-400 text-sm mb-2">{card.label}</h3>
+            
+            {loading ? (
+              <div className="h-8 w-24 bg-gray-200/20 animate-pulse rounded"></div>
+            ) : (
+              <div className="flex items-center gap-2">
+                <span className="text-2xl font-bold text-white">{card.value}</span>
+                <Sparkles className="w-4 h-4 text-[#FFD700]" />
+              </div>
+            )}
+            
+            {/* Decorative Elements */}
+            <div className="absolute top-0 right-0 p-2">
+              <div className="w-2 h-2 rounded-full bg-white/20"></div>
             </div>
           </div>
-        </div>
+        </motion.div>
       ))}
-    </div>
+    </motion.div>
   );
 }

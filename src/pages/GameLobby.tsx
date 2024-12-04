@@ -6,25 +6,31 @@ import CreateRoomButton from '../components/lobby/CreateRoomButton';
 import JoinByCode from '../components/lobby/JoinByCode';
 import type { Room } from '../types/room';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Trophy, Zap, Users, Crown, IndianRupee } from 'lucide-react';
+import { Trophy, Zap, Users, Crown, IndianRupee, Clock, Search } from 'lucide-react';
 import { useAuth } from '../lib/auth/AuthContext';
 import { supabase } from '../lib/supabase';
+import toast from 'react-hot-toast';
 
 export default function GameLobby() {
+  const [rooms, setRooms] = useState<Room[]>([]);
   const [filteredRooms, setFilteredRooms] = useState<Room[]>([]);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [sortBy, setSortBy] = useState<'prize' | 'players' | 'time'>('prize');
   const [stats, setStats] = useState({
     prizePool: 0,
     activeGames: 0,
     players: 0,
+    topPrize: 0
   });
   const { user } = useAuth();
 
   useEffect(() => {
     if (!user?.id) return;
-    void loadStats();
+    void loadRoomsAndStats();
 
+    // Subscribe to room changes
     const channel = supabase
-      .channel('lobby-stats')
+      .channel('lobby')
       .on(
         'postgres_changes',
         {
@@ -33,7 +39,7 @@ export default function GameLobby() {
           table: 'rooms',
         },
         () => {
-          void loadStats();
+          void loadRoomsAndStats();
         }
       )
       .subscribe();
@@ -43,17 +49,51 @@ export default function GameLobby() {
     };
   }, [user?.id]);
 
-  const loadStats = async () => {
+  // Filter and sort rooms when search query or sort method changes
+  useEffect(() => {
+    let result = [...rooms];
+    
+    // Apply search filter
+    if (searchQuery) {
+      result = result.filter(room => 
+        room.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        room.host_name?.toLowerCase().includes(searchQuery.toLowerCase())
+      );
+    }
+    
+    // Apply sorting
+    result.sort((a, b) => {
+      switch (sortBy) {
+        case 'prize':
+          return calculateTotalPrize(b.prizes) - calculateTotalPrize(a.prizes);
+        case 'players':
+          return (b.current_players || 0) - (a.current_players || 0);
+        case 'time':
+          return new Date(a.start_time).getTime() - new Date(b.start_time).getTime();
+        default:
+          return 0;
+      }
+    });
+    
+    setFilteredRooms(result);
+  }, [rooms, searchQuery, sortBy]);
+
+  const calculateTotalPrize = (prizes: Room['prizes']) => {
+    return Object.values(prizes).reduce((sum, prize) => sum + prize, 0);
+  };
+
+  const loadRoomsAndStats = async () => {
     try {
-      // Get active rooms with their prizes
+      // Get active rooms with their details
       const { data: roomsData, error: roomsError } = await supabase
         .from('rooms')
         .select(`
-          ticket_price,
-          max_players,
-          prizes
+          *,
+          host:host_id(username),
+          players:room_players(count)
         `)
-        .eq('status', 'waiting');
+        .eq('status', 'waiting')
+        .order('created_at', { ascending: false });
 
       if (roomsError) throw roomsError;
 
@@ -65,159 +105,179 @@ export default function GameLobby() {
 
       if (playersError) throw playersError;
 
-      // Calculate total prize pool
-      const prizePool = (roomsData || []).reduce((total, room) => {
-        if (!room.prizes) return total;
-        const prizes = room.prizes as Room['prizes'];
-        return total + Object.values(prizes).reduce((a, b) => a + b, 0);
-      }, 0);
+      // Process rooms data
+      const processedRooms = roomsData?.map(room => ({
+        ...room,
+        host_name: room.host?.username,
+        current_players: room.players?.[0]?.count || 0
+      })) || [];
+
+      setRooms(processedRooms);
+
+      // Calculate stats
+      const totalPrizePool = processedRooms.reduce((total, room) => 
+        total + calculateTotalPrize(room.prizes), 0
+      );
+
+      const topPrize = processedRooms.reduce((max, room) => 
+        Math.max(max, calculateTotalPrize(room.prizes)), 0
+      );
 
       setStats({
-        prizePool,
-        activeGames: roomsData?.length || 0,
+        prizePool: totalPrizePool,
+        activeGames: processedRooms.length,
         players: paidPlayersCount || 0,
+        topPrize
       });
     } catch (error) {
-      console.error('Error loading stats:', error);
-      // Optionally show error toast
-      // toast.error('Failed to load lobby stats');
+      console.error('Error loading lobby data:', error);
+      toast.error('Failed to load lobby data');
     }
   };
 
-  if (!user) {
-    return null; // or redirect to login
-  }
+  if (!user) return null;
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-gray-900 to-gray-800">
-      {/* Hero Section */}
-      <div className="relative overflow-hidden">
-        <div className="absolute inset-0">
-          <div className="absolute inset-0 bg-gradient-to-r from-cyan-600/20 to-indigo-600/20 mix-blend-multiply" />
-        </div>
-        <div className="relative max-w-7xl mx-auto py-12 px-4">
+      {/* Hero Stats Section */}
+      <div className="relative overflow-hidden bg-gradient-to-r from-cyan-600/20 to-indigo-600/20">
+        <div className="max-w-7xl mx-auto py-8 px-4">
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            className="text-center"
+            className="grid grid-cols-2 md:grid-cols-4 gap-6"
           >
-            <h1 className="text-4xl font-extrabold text-white sm:text-5xl sm:tracking-tight lg:text-6xl">
-              Game Lobby
-            </h1>
-            <p className="mt-4 max-w-2xl mx-auto text-xl text-gray-300">
-              Join exciting Tambola games and win big prizes
-            </p>
+            {/* Prize Pool */}
+            <div className="bg-black/30 rounded-xl p-4 backdrop-blur-sm">
+              <div className="flex items-center text-emerald-400 mb-2">
+                <Trophy className="w-5 h-5 mr-2" />
+                <span className="text-sm font-medium">Prize Pool</span>
+              </div>
+              <div className="text-xl font-bold text-white">₹{stats.prizePool.toLocaleString()}</div>
+            </div>
+
+            {/* Active Games */}
+            <div className="bg-black/30 rounded-xl p-4 backdrop-blur-sm">
+              <div className="flex items-center text-blue-400 mb-2">
+                <Zap className="w-5 h-5 mr-2" />
+                <span className="text-sm font-medium">Active Games</span>
+              </div>
+              <div className="text-xl font-bold text-white">{stats.activeGames}</div>
+            </div>
+
+            {/* Online Players */}
+            <div className="bg-black/30 rounded-xl p-4 backdrop-blur-sm">
+              <div className="flex items-center text-purple-400 mb-2">
+                <Users className="w-5 h-5 mr-2" />
+                <span className="text-sm font-medium">Online Players</span>
+              </div>
+              <div className="text-xl font-bold text-white">{stats.players}</div>
+            </div>
+
+            {/* Top Prize */}
+            <div className="bg-black/30 rounded-xl p-4 backdrop-blur-sm">
+              <div className="flex items-center text-amber-400 mb-2">
+                <Crown className="w-5 h-5 mr-2" />
+                <span className="text-sm font-medium">Top Prize</span>
+              </div>
+              <div className="text-xl font-bold text-white">₹{stats.topPrize.toLocaleString()}</div>
+            </div>
           </motion.div>
         </div>
       </div>
 
-      {/* Search Bar */}
-      <div className="max-w-7xl mx-auto px-4 -mt-8">
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.1 }}
-        >
-          <div className="mb-8">
-            <h2 className="text-2xl font-bold mb-4">Quick Join</h2>
-            <JoinByCode />
-          </div>
-          <SearchBar onRoomsChange={setFilteredRooms} />
-        </motion.div>
-      </div>
-
-      {/* Quick Stats */}
-      <div className="max-w-7xl mx-auto px-4 mt-8">
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: 0.2 }}
-          className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4"
-        >
-          <div className="bg-gradient-to-br from-gray-800 to-gray-700 rounded-2xl p-6 shadow-lg border border-gray-700">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-gray-400">Total Prize Pool</p>
-                <p className="mt-2 text-3xl font-bold text-white">₹{stats.prizePool.toLocaleString()}</p>
-              </div>
-              <div className="p-3 bg-yellow-500/10 rounded-xl">
-                <Trophy className="w-8 h-8 text-yellow-500" />
-              </div>
-            </div>
+      {/* Search and Filter Section */}
+      <div className="max-w-7xl mx-auto px-4 py-6">
+        <div className="flex flex-col md:flex-row gap-4 items-center justify-between mb-6">
+          {/* Search */}
+          <div className="relative w-full md:w-96">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+            <input
+              type="text"
+              placeholder="Search rooms or hosts..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full pl-10 pr-4 py-2 bg-gray-800 border border-gray-700 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent"
+            />
           </div>
 
-          <div className="bg-gradient-to-br from-gray-800 to-gray-700 rounded-2xl p-6 shadow-lg border border-gray-700">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-gray-400">Active Games</p>
-                <p className="mt-2 text-3xl font-bold text-white">{stats.activeGames}</p>
-              </div>
-              <div className="p-3 bg-cyan-500/10 rounded-xl">
-                <Zap className="w-8 h-8 text-cyan-500" />
-              </div>
-            </div>
+          {/* Sort Options */}
+          <div className="flex gap-2">
+            <button
+              onClick={() => setSortBy('prize')}
+              className={`px-4 py-2 rounded-lg ${
+                sortBy === 'prize'
+                  ? 'bg-cyan-500 text-white'
+                  : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
+              }`}
+            >
+              <IndianRupee className="w-4 h-4 inline mr-1" />
+              Prize
+            </button>
+            <button
+              onClick={() => setSortBy('players')}
+              className={`px-4 py-2 rounded-lg ${
+                sortBy === 'players'
+                  ? 'bg-cyan-500 text-white'
+                  : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
+              }`}
+            >
+              <Users className="w-4 h-4 inline mr-1" />
+              Players
+            </button>
+            <button
+              onClick={() => setSortBy('time')}
+              className={`px-4 py-2 rounded-lg ${
+                sortBy === 'time'
+                  ? 'bg-cyan-500 text-white'
+                  : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
+              }`}
+            >
+              <Clock className="w-4 h-4 inline mr-1" />
+              Time
+            </button>
           </div>
+        </div>
 
-          <div className="bg-gradient-to-br from-gray-800 to-gray-700 rounded-2xl p-6 shadow-lg border border-gray-700">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-gray-400">Active Players</p>
-                <p className="mt-2 text-3xl font-bold text-white">{stats.players}</p>
-              </div>
-              <div className="p-3 bg-green-500/10 rounded-xl">
-                <Users className="w-8 h-8 text-green-500" />
-              </div>
-            </div>
-          </div>
-        </motion.div>
-      </div>
-
-      {/* Rooms Grid */}
-      <div className="max-w-7xl mx-auto px-4 py-8">
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: 0.3 }}
-        >
+        {/* Rooms Grid */}
+        <AnimatePresence mode="popLayout">
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            <AnimatePresence mode="popLayout">
-              {filteredRooms.map((room) => (
-                <motion.div
-                  key={room.id}
-                  layout
-                  initial={{ opacity: 0, scale: 0.9 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  exit={{ opacity: 0, scale: 0.9 }}
-                  transition={{ duration: 0.2 }}
-                >
-                  <RoomCard room={room} currentUserId={user.id} />
-                </motion.div>
-              ))}
-              {filteredRooms.length === 0 && (
-                <motion.div
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  className="col-span-full"
-                >
-                  <div className="text-center py-12">
-                    <div className="mx-auto h-24 w-24 text-gray-500">
-                      <Crown className="mx-auto w-12 h-12 text-gray-500" />
-                    </div>
-                    <h3 className="mt-2 text-lg font-medium text-gray-200">No rooms found</h3>
-                    <p className="mt-1 text-sm text-gray-400">Try adjusting your search filters</p>
-                  </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
+            {filteredRooms.map((room) => (
+              <motion.div
+                key={room.id}
+                initial={{ opacity: 0, scale: 0.9 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.9 }}
+                transition={{ duration: 0.2 }}
+              >
+                <RoomCard room={room} />
+              </motion.div>
+            ))}
           </div>
-        </motion.div>
-      </div>
+        </AnimatePresence>
 
-      {/* Create Room Button */}
-      <CreateRoomButton userId={user.id} />
+        {/* Empty State */}
+        {filteredRooms.length === 0 && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            className="text-center py-12"
+          >
+            <div className="text-gray-400 text-lg">
+              {searchQuery
+                ? 'No rooms match your search'
+                : 'No active rooms available'}
+            </div>
+            <CreateRoomButton className="mt-4" />
+          </motion.div>
+        )}
+      </div>
 
       {/* Bottom Navigation */}
       <BottomNav />
+
+      {/* Join by Code Modal */}
+      <JoinByCode />
     </div>
   );
 }

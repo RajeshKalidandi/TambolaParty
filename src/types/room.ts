@@ -1,3 +1,7 @@
+export type GameStatus = 'waiting' | 'in_progress' | 'completed' | 'cancelled';
+
+export type GameType = 'free' | 'paid' | 'tournament';
+
 export interface Room {
   id: string;
   name: string;
@@ -7,6 +11,7 @@ export interface Room {
   status: GameStatus;
   start_time: string;
   max_players: number;
+  ticket_price: number;
   prizes: {
     fullHouse: number;
     earlyFive: number;
@@ -14,6 +19,7 @@ export interface Room {
     middleLine: number;
     bottomLine: number;
   };
+  requires_payment: boolean;
   created_at: string;
 }
 
@@ -25,6 +31,7 @@ export interface RecentRoom {
   ticketPrice: number;
   startTime: Date;
   playerCount: number;
+  type: GameType;
 }
 
 export interface PopularHost {
@@ -41,6 +48,9 @@ export interface Player {
   nickname: string;
   ticket_number?: string;
   wins?: GameWin[];
+  payment_verified?: boolean;
+  payment_verified_at?: string;
+  payment_verified_by?: string;
 }
 
 export interface GameWin {

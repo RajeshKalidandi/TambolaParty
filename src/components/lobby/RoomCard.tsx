@@ -5,6 +5,8 @@ import type { Room } from '../../types/room';
 import { motion, AnimatePresence } from 'framer-motion';
 import { supabase } from '../../lib/supabase';
 import toast from 'react-hot-toast';
+import { formatDistanceToNow } from 'date-fns';
+import { useAuth } from '../../lib/auth/AuthContext';
 
 const defaultPrizes = {
   fullHouse: 0,
@@ -33,6 +35,7 @@ export default function RoomCard({ room, currentUserId }: RoomCardProps) {
   const [joining, setJoining] = useState(false);
   const [isHovered, setIsHovered] = useState(false);
   const navigate = useNavigate();
+  const { user } = useAuth();
 
   useEffect(() => {
     if (!room.id) return;
@@ -111,149 +114,102 @@ export default function RoomCard({ room, currentUserId }: RoomCardProps) {
 
   return (
     <motion.div 
-      layout
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      onHoverStart={() => setIsHovered(true)}
-      onHoverEnd={() => setIsHovered(false)}
-      className={`bg-gray-800/50 backdrop-blur-lg rounded-2xl overflow-hidden border transition-all duration-300
-        ${isFull ? 'border-red-500/50' : isHovered ? 'border-cyan-500 shadow-lg shadow-cyan-500/10' : 'border-gray-700'}`}
+      whileHover={{ scale: 1.02 }}
+      whileTap={{ scale: 0.98 }}
+      className={`bg-gradient-to-br from-gray-800 to-gray-900 rounded-xl overflow-hidden shadow-lg border border-gray-700 hover:border-cyan-500/50 transition-colors ${
+        currentRoom.type === 'free' ? 'bg-green-500/20' : ''
+      }`}
     >
-      <div className="p-6">
-        {/* Header */}
-        <div className="flex items-start justify-between">
+      {/* Header */}
+      <div className="p-4 border-b border-gray-700">
+        <div className="flex justify-between items-start mb-2">
           <div>
-            <div className="flex items-center gap-3">
-              <h3 className="text-xl font-semibold text-white">{currentRoom.name ?? 'Unnamed Room'}</h3>
-              {startingSoon && (
-                <motion.span
-                  initial={{ scale: 0.8 }}
-                  animate={{ scale: 1 }}
-                  className="px-3 py-1 text-xs font-semibold bg-green-500/10 text-green-400 rounded-full border border-green-500/20"
-                >
-                  Starting Soon
-                </motion.span>
-              )}
-            </div>
-            <div className="flex items-center gap-3 mt-2">
-              <div className="flex items-center text-yellow-500">
-                <Crown className="w-5 h-5" />
-                <span className="ml-1.5 font-medium">{currentRoom.hostRating ?? 0}</span>
-              </div>
-              <span className="text-sm text-gray-400">
-                Hosted by {currentRoom.host?.full_name ?? 'Unknown Host'}
-              </span>
-            </div>
+            <h3 className="text-lg font-semibold text-white">{currentRoom.name}</h3>
+            <p className="text-sm text-gray-400">Hosted by {currentRoom.host?.full_name}</p>
           </div>
-          <motion.button
-            whileHover={{ scale: 1.1 }}
-            whileTap={{ scale: 0.9 }}
-            onClick={() => setExpanded(!expanded)}
-            className="p-2 rounded-xl bg-gray-700/50 hover:bg-gray-700 transition-colors"
-          >
-            {expanded ? <ChevronUp className="w-5 h-5 text-gray-400" /> : <ChevronDown className="w-5 h-5 text-gray-400" />}
-          </motion.button>
-        </div>
-
-        {/* Quick Stats */}
-        <div className="grid grid-cols-3 gap-4 mt-6">
-          <div className="bg-gray-900/50 rounded-xl p-4">
-            <div className="flex items-center gap-2">
-              <div className="p-2 rounded-lg bg-indigo-500/10">
-                <IndianRupee className="w-5 h-5 text-indigo-400" />
+          <div className="flex items-center space-x-2">
+            <span
+              className={`px-2 py-1 rounded-lg text-xs font-medium ${
+                currentRoom.type === 'free'
+                  ? 'bg-green-500/10 text-green-400 border border-green-500/20'
+                  : currentRoom.type === 'tournament'
+                  ? 'bg-purple-500/10 text-purple-400 border border-purple-500/20'
+                  : 'bg-cyan-500/10 text-cyan-400 border border-cyan-500/20'
+              }`}
+            >
+              {currentRoom.type === 'free' ? 'Free Room' : currentRoom.type === 'tournament' ? 'Tournament' : 'Paid Room'}
+            </span>
+            {currentRoom.type !== 'free' && (
+              <div className="flex items-center space-x-1 bg-cyan-500/10 text-cyan-400 px-2 py-1 rounded-lg">
+                <Trophy className="w-4 h-4" />
+                <span className="text-sm font-medium">₹{totalPrize.toLocaleString()}</span>
               </div>
-              <div>
-                <p className="text-sm text-gray-400">Entry Fee</p>
-                <p className="font-semibold text-white">₹{currentRoom.ticketPrice ?? 0}</p>
-              </div>
-            </div>
-          </div>
-          <div className="bg-gray-900/50 rounded-xl p-4">
-            <div className="flex items-center gap-2">
-              <div className="p-2 rounded-lg bg-yellow-500/10">
-                <Trophy className="w-5 h-5 text-yellow-400" />
-              </div>
-              <div>
-                <p className="text-sm text-gray-400">Prize</p>
-                <p className="font-semibold text-white">₹{totalPrize}</p>
-              </div>
-            </div>
-          </div>
-          <div className="bg-gray-900/50 rounded-xl p-4">
-            <div className="flex items-center gap-2">
-              <div className="p-2 rounded-lg bg-cyan-500/10">
-                <Clock className="w-5 h-5 text-cyan-400" />
-              </div>
-              <div>
-                <p className="text-sm text-gray-400">Starts In</p>
-                <p className="font-semibold text-white">{timeUntilStart()}</p>
-              </div>
-            </div>
+            )}
           </div>
         </div>
 
-        {/* Expanded Content */}
+        {/* Stats */}
+        <div className="flex items-center space-x-4 text-sm">
+          <div className="flex items-center text-gray-400">
+            <Users className="w-4 h-4 mr-1" />
+            <span>{playerCount}/{maxPlayers}</span>
+          </div>
+          {currentRoom.type !== 'free' && (
+            <div className="flex items-center text-gray-400">
+              <IndianRupee className="w-4 h-4 mr-1" />
+              <span>₹{currentRoom.ticketPrice}</span>
+            </div>
+          )}
+          <div className="flex items-center text-gray-400">
+            <Clock className="w-4 h-4 mr-1" />
+            <span>{timeUntilStart()}</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Prize Distribution - Only for paid rooms */}
+      {currentRoom.type !== 'free' && (
         <AnimatePresence>
           {expanded && (
             <motion.div
               initial={{ opacity: 0, height: 0 }}
               animate={{ opacity: 1, height: 'auto' }}
               exit={{ opacity: 0, height: 0 }}
-              className="mt-6 space-y-4"
+              className="p-4 space-y-2"
             >
-              {/* Prize Distribution */}
-              <div className="bg-gray-900/50 rounded-xl p-4">
-                <h4 className="text-sm font-medium text-gray-300 mb-3">Prize Distribution</h4>
-                <div className="space-y-2">
-                  {Object.entries(currentRoom.prizes ?? defaultPrizes).map(([key, value]) => (
-                    <div key={key} className="flex items-center justify-between">
-                      <span className="text-sm text-gray-400">{prizeNames[key as keyof typeof prizeNames]}</span>
-                      <span className="text-sm font-medium text-white">₹{value}</span>
-                    </div>
-                  ))}
-                </div>
+              <div className="flex justify-between items-center text-sm">
+                <span className="text-gray-400">Full House</span>
+                <span className="text-white font-medium">₹{currentRoom.prizes?.fullHouse}</span>
               </div>
-
-              {/* Players */}
-              <div className="bg-gray-900/50 rounded-xl p-4">
-                <div className="flex items-center justify-between mb-3">
-                  <h4 className="text-sm font-medium text-gray-300">Players</h4>
-                  <div className="flex items-center gap-2">
-                    <Users className="w-4 h-4 text-gray-400" />
-                    <span className="text-sm text-gray-400">{playerCount}/{maxPlayers}</span>
-                  </div>
-                </div>
-                <div className="flex -space-x-2">
-                  {Array.from({ length: Math.min(5, playerCount) }).map((_, i) => (
-                    <div
-                      key={i}
-                      className="w-8 h-8 rounded-full bg-gray-700 border-2 border-gray-800 flex items-center justify-center"
-                    >
-                      <Users className="w-4 h-4 text-gray-400" />
-                    </div>
-                  ))}
-                  {playerCount > 5 && (
-                    <div className="w-8 h-8 rounded-full bg-gray-700 border-2 border-gray-800 flex items-center justify-center">
-                      <span className="text-xs text-gray-400">+{playerCount - 5}</span>
-                    </div>
-                  )}
-                </div>
+              <div className="flex justify-between items-center text-sm">
+                <span className="text-gray-400">Early Five</span>
+                <span className="text-white font-medium">₹{currentRoom.prizes?.earlyFive}</span>
+              </div>
+              <div className="flex justify-between items-center text-sm">
+                <span className="text-gray-400">Lines</span>
+                <span className="text-white font-medium">
+                  ₹{currentRoom.prizes?.topLine + currentRoom.prizes?.middleLine + currentRoom.prizes?.bottomLine}
+                </span>
               </div>
             </motion.div>
           )}
         </AnimatePresence>
+      )}
 
-        {/* Join Button */}
+      {/* Join Button */}
+      <div className="p-4 bg-gray-800/50">
         <motion.button
           whileHover={{ scale: 1.02 }}
           whileTap={{ scale: 0.98 }}
           onClick={handleJoinRoom}
           disabled={isFull || joining}
-          className={`w-full mt-6 py-3 px-4 rounded-xl font-medium transition-all
-            ${isFull 
+          className={`w-full py-2 px-4 rounded-lg font-medium transition-colors ${
+            isFull 
               ? 'bg-gray-700 text-gray-400 cursor-not-allowed' 
-              : 'bg-gradient-to-r from-cyan-500 to-blue-500 text-white hover:shadow-lg hover:shadow-cyan-500/25'
-            }`}
+              : startingSoon
+              ? 'bg-green-500 hover:bg-green-600 text-white'
+              : 'bg-cyan-500 hover:bg-cyan-600 text-white'
+          }`}
         >
           {joining ? (
             <div className="flex items-center justify-center gap-2">
@@ -262,8 +218,10 @@ export default function RoomCard({ room, currentUserId }: RoomCardProps) {
             </div>
           ) : isFull ? (
             'Room Full'
+          ) : startingSoon ? (
+            'Starting Soon'
           ) : (
-            'Join Game'
+            'Join Room'
           )}
         </motion.button>
       </div>
